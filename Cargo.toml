@@ -1,0 +1,27 @@
+[workspace]
+
+[package]
+name = "loadfu"
+version = "0.1.0"
+edition = "2021"
+description = "Format-agnostic 3D asset loading. Single crate, Bevy behind a feature flag."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Core parsing dependencies (always available)
+stl_io = "0.8"
+tobj = { version = "4.0", default-features = false }
+gltf = { version = "1.4", features = ["import"] }
+bytemuck = { version = "1", features = ["extern_crate_alloc"] }
+thiserror = "2"
+
+# Bevy integration (optional, behind feature flag)
+bevy = { version = "0.18", default-features = false, optional = true, features = [
+    "bevy_asset",
+    "bevy_render",
+    "bevy_mesh",
+] }
+
+[features]
+default = []
+bevy = ["dep:bevy"]
