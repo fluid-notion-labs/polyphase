@@ -1792,6 +1792,7 @@ dependencies = [
  "bevy",
  "bytemuck",
  "gltf",
+ "serde",
  "stl_io",
  "thiserror 2.0.18",
  "tobj",

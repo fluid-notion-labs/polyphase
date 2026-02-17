@@ -189,10 +189,7 @@ fn build_merged_mesh(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
-    }
+    use crate::test_util::fixture;
 
     // ── Basic parsing ─────────────────────────────────────────────────
 

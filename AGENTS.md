@@ -163,6 +163,62 @@ bd sync               # Sync with git
 | `ref/sequence_loader/` | Seaview orchestration (stays in seaview, context only) |
 | `docs/architecture/dependencies.md` | Dependency guidelines — what we use, what we rejected, process for adding crates |
 
+## Testing
+
+### Test Runner
+
+We use **cargo-nextest** for fast, parallel test execution. Config lives in `.config/nextest.toml`.
+
+```bash
+cargo nextest run -p loadfu          # Run all tests (default profile)
+cargo nextest run -p loadfu -E 'test(stl)'  # Filter by name
+cargo nextest run -p loadfu --profile ci     # CI profile (quiet, failures only)
+```
+
+### Test Layout
+
+Tests live in three places:
+
+| Location | What | Example |
+|---|---|---|
+| `src/<module>.rs` (`#[cfg(test)] mod tests`) | Unit tests — co-located with the code they test | `src/parsers/stl.rs`, `src/mesh_data.rs` |
+| `tests/pipeline.rs` | Integration tests — cross-module pipeline (parse → validate → capabilities) | `stl_binary_full_pipeline`, `format_detect_and_parse_glb` |
+| `tests/fixtures/` | Binary/text fixture files loaded by tests | `triangle.stl`, `cube.glb`, `quad.obj` |
+
+Every `src/` module with logic has a `#[cfg(test)] mod tests` block at the bottom, separated by a `// ---` divider.
+
+Shared test helpers live in `src/lib.rs` → `test_util` (`#[cfg(test)] pub(crate) mod`). This provides `fixture()`, `sample_triangle()`, and `sample_triangle_bare()` so unit tests don't duplicate helpers.
+
+### Fixtures
+
+Fixture files in `tests/fixtures/` are real 3D assets (small, hand-crafted). Parsers load them via `include_bytes!` in tests — no filesystem IO at test time.
+
+Current fixtures:
+- **STL:** `triangle.stl` (binary), `triangle_ascii.stl`, `quad.stl` (binary)
+- **OBJ:** `triangle.obj`, `triangle_normals.obj`, `triangle_full.obj` (normals+UVs), `quad.obj`, `two_objects.obj`
+- **GLB:** `cube.glb`
+
+When adding a new parser or feature, add a minimal fixture that exercises it.
+
+### Test Conventions
+
+- **Parser tests are pure.** Feed `&[u8]` in, assert on `MeshData` fields. No filesystem, no Bevy.
+- **Test names describe the scenario:** `parse_binary_triangle`, `empty_stl_returns_error`, `smooth_normals_single_triangle`.
+- **Error paths get tests too.** Every `LoadError` variant should have at least one test that triggers it.
+- **Validation round-trip.** After parsing, call `.validate()` and assert `Ok(())` — proves the parser produces structurally valid `MeshData`.
+
+### Nextest Profiles
+
+| Profile | Use | Behavior |
+|---|---|---|
+| `default` | Local dev | Shows all pass/fail, immediate failure output, slow-test warning at 5s |
+| `ci` | CI pipelines | Only shows failures, quiet on success |
+
+### Test Counts
+
+Track rough test counts here so agents know what to expect:
+- **102 tests** as of Epic 2 completion (83 unit + 19 integration in `tests/pipeline.rs`)
+
 ## Verification
 
 After any code changes, run:

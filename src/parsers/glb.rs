@@ -348,10 +348,7 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
-    }
+    use crate::test_util::fixture;
 
     /// Minimal valid GLB with no meshes, for error testing.
     fn empty_glb() -> Vec<u8> {

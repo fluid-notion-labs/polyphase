@@ -201,10 +201,7 @@ pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
-    }
+    use crate::test_util::fixture;
 
     // ── Binary STL ────────────────────────────────────────────────────
 

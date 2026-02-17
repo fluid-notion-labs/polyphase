@@ -247,25 +247,7 @@ impl AssetData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MeshData;
-
-    fn sample_mesh() -> MeshData {
-        MeshData {
-            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
-            uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
-            indices: vec![0, 1, 2],
-        }
-    }
-
-    fn sample_mesh_no_normals() -> MeshData {
-        MeshData {
-            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: None,
-            uvs: None,
-            indices: vec![0, 1, 2],
-        }
-    }
+    use crate::test_util::{sample_triangle, sample_triangle_bare};
 
     // ── TopologyKind ──────────────────────────────────────────────────
 
@@ -316,7 +298,7 @@ mod tests {
 
     #[test]
     fn asset_data_single() {
-        let data = AssetData::single(sample_mesh());
+        let data = AssetData::single(sample_triangle());
         assert_eq!(data.meshes.len(), 1);
         assert!(data.materials.is_empty());
     }
@@ -326,7 +308,7 @@ mod tests {
     #[test]
     fn asset_data_totals() {
         let data = AssetData {
-            meshes: vec![sample_mesh(), sample_mesh()],
+            meshes: vec![sample_triangle(), sample_triangle()],
             materials: Vec::new(),
         };
         assert_eq!(data.total_vertices(), 6);
@@ -337,7 +319,7 @@ mod tests {
 
     #[test]
     fn capabilities_from_data_with_normals_and_uvs() {
-        let data = AssetData::single(sample_mesh());
+        let data = AssetData::single(sample_triangle());
         let cap = data.capabilities();
         assert!(cap.has_normals);
         assert!(cap.has_uvs);
@@ -350,7 +332,7 @@ mod tests {
 
     #[test]
     fn capabilities_from_data_without_normals() {
-        let data = AssetData::single(sample_mesh_no_normals());
+        let data = AssetData::single(sample_triangle_bare());
         let cap = data.capabilities();
         assert!(!cap.has_normals);
         assert!(!cap.has_uvs);
@@ -361,7 +343,7 @@ mod tests {
     #[test]
     fn capabilities_multi_object() {
         let data = AssetData {
-            meshes: vec![sample_mesh(), sample_mesh_no_normals()],
+            meshes: vec![sample_triangle(), sample_triangle_bare()],
             materials: Vec::new(),
         };
         let cap = data.capabilities();
@@ -373,7 +355,7 @@ mod tests {
     #[test]
     fn capabilities_with_materials() {
         let data = AssetData {
-            meshes: vec![sample_mesh()],
+            meshes: vec![sample_triangle()],
             materials: vec![
                 MaterialData::default(),
                 MaterialData {
@@ -390,7 +372,7 @@ mod tests {
     #[test]
     fn capabilities_materials_without_textures() {
         let data = AssetData {
-            meshes: vec![sample_mesh()],
+            meshes: vec![sample_triangle()],
             materials: vec![MaterialData::default()],
         };
         let cap = data.capabilities();

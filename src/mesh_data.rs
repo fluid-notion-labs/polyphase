@@ -217,16 +217,7 @@ impl MeshData {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Helper: a minimal valid triangle.
-    fn triangle() -> MeshData {
-        MeshData {
-            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
-            uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
-            indices: vec![0, 1, 2],
-        }
-    }
+    use crate::test_util::sample_triangle;
 
     // ── Construction ──────────────────────────────────────────────────
 
@@ -259,7 +250,7 @@ mod tests {
 
     #[test]
     fn valid_triangle_passes() {
-        assert!(triangle().validate().is_ok());
+        assert!(sample_triangle().validate().is_ok());
     }
 
     #[test]
@@ -288,7 +279,7 @@ mod tests {
 
     #[test]
     fn validated_returns_self() {
-        let mesh = triangle();
+        let mesh = sample_triangle();
         let result = mesh.clone().validated();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), mesh);
@@ -337,7 +328,7 @@ mod tests {
 
     #[test]
     fn normals_length_mismatch() {
-        let mut mesh = triangle();
+        let mut mesh = sample_triangle();
         mesh.normals = Some(vec![[0.0, 0.0, 1.0]; 2]); // 2 normals, 3 positions
         assert_eq!(
             mesh.validate(),
@@ -350,7 +341,7 @@ mod tests {
 
     #[test]
     fn uvs_length_mismatch() {
-        let mut mesh = triangle();
+        let mut mesh = sample_triangle();
         mesh.uvs = Some(vec![[0.0, 0.0]; 5]); // 5 UVs, 3 positions
         assert_eq!(
             mesh.validate(),

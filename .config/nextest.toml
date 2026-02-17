@@ -1,0 +1,21 @@
+# cargo-nextest configuration for loadfu
+# https://nexte.st/docs/configuration/
+
+[profile.default]
+# Show all test statuses (pass, fail, skip, slow, etc.)
+status-level = "pass"
+# At the end of the run, show failures and skips
+final-status-level = "skip"
+# Don't capture output for failing tests — show immediately
+failure-output = "immediate"
+# Hide stdout/stderr for passing tests
+success-output = "never"
+# Warn about slow tests after 5 seconds
+slow-timeout = { period = "5s" }
+
+[profile.ci]
+# CI profile — quieter, only show failures
+status-level = "fail"
+final-status-level = "fail"
+failure-output = "immediate-final"
+success-output = "never"

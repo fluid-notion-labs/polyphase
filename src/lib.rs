@@ -38,7 +38,8 @@ pub mod format;
 pub mod mesh_data;
 pub mod parsers;
 
-// Future: #[cfg(feature = "bevy")] pub mod bevy;
+#[cfg(feature = "bevy")]
+pub mod bevy_integration;
 
 // ── Public API re-exports ─────────────────────────────────────────────
 
@@ -46,3 +47,41 @@ pub use capabilities::{AssetCapabilities, AssetData, MaterialData, ParseCost, To
 pub use error::{GlbError, LoadError, ObjError, StlError};
 pub use format::MeshFormat;
 pub use mesh_data::{MeshData, MeshDataError};
+
+// ── Bevy integration re-exports ───────────────────────────────────────
+
+#[cfg(feature = "bevy")]
+pub use bevy_integration::{
+    GlbLoader, GlbLoaderSettings, LoadfuPlugin, ObjLoader, ObjLoaderSettings, StlLoader,
+    StlLoaderSettings,
+};
+
+// ── Shared test utilities ─────────────────────────────────────────────
+
+#[cfg(test)]
+pub(crate) mod test_util {
+    use crate::MeshData;
+
+    /// Load a fixture file from `tests/fixtures/{name}`.
+    pub fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
+    }
+
+    /// A minimal valid triangle — positions, normals, UVs, 3 indices.
+    pub fn sample_triangle() -> MeshData {
+        MeshData {
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
+            uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+            indices: vec![0, 1, 2],
+        }
+    }
+
+    /// A minimal triangle with positions and indices only — no normals, no UVs.
+    pub fn sample_triangle_bare() -> MeshData {
+        MeshData::new(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![0, 1, 2],
+        )
+    }
+}
