@@ -202,162 +202,65 @@ pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) ->
 mod tests {
     use super::*;
 
-    /// Generate a minimal binary STL with a single triangle.
-    ///
-    /// Binary STL format:
-    /// - 80 bytes: header
-    /// - 4 bytes: u32 triangle count
-    /// - Per triangle (50 bytes each):
-    ///   - 12 bytes: normal (3 × f32)
-    ///   - 36 bytes: 3 vertices (each 3 × f32)
-    ///   - 2 bytes: attribute byte count
-    fn make_binary_stl_one_triangle() -> Vec<u8> {
-        let mut buf = Vec::new();
-
-        // Header (80 bytes)
-        buf.extend_from_slice(&[0u8; 80]);
-
-        // Triangle count: 1
-        buf.extend_from_slice(&1u32.to_le_bytes());
-
-        // Normal: [0, 0, 1]
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-        buf.extend_from_slice(&1.0f32.to_le_bytes());
-
-        // Vertex 0: [0, 0, 0]
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Vertex 1: [1, 0, 0]
-        buf.extend_from_slice(&1.0f32.to_le_bytes());
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Vertex 2: [0, 1, 0]
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-        buf.extend_from_slice(&1.0f32.to_le_bytes());
-        buf.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Attribute byte count
-        buf.extend_from_slice(&0u16.to_le_bytes());
-
-        buf
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
     }
 
-    /// Generate a binary STL with two triangles sharing an edge (a quad).
-    fn make_binary_stl_quad() -> Vec<u8> {
-        let mut buf = Vec::new();
-
-        // Header
-        buf.extend_from_slice(&[0u8; 80]);
-
-        // Triangle count: 2
-        buf.extend_from_slice(&2u32.to_le_bytes());
-
-        // Triangle 1: (0,0,0) (1,0,0) (0,1,0) — normal [0,0,1]
-        for &val in &[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0f32] {
-            buf.extend_from_slice(&val.to_le_bytes());
-        }
-        buf.extend_from_slice(&0u16.to_le_bytes());
-
-        // Triangle 2: (1,0,0) (1,1,0) (0,1,0) — normal [0,0,1]
-        for &val in &[0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0f32] {
-            buf.extend_from_slice(&val.to_le_bytes());
-        }
-        buf.extend_from_slice(&0u16.to_le_bytes());
-
-        buf
-    }
-
-    fn make_ascii_stl_one_triangle() -> Vec<u8> {
-        b"solid test
-  facet normal 0 0 1
-    outer loop
-      vertex 0 0 0
-      vertex 1 0 0
-      vertex 0 1 0
-    endloop
-  endfacet
-endsolid test"
-            .to_vec()
-    }
-
-    // ── Basic parsing ─────────────────────────────────────────────────
+    // ── Binary STL ────────────────────────────────────────────────────
 
     #[test]
-    fn parse_binary_stl_single_triangle() {
-        let data = make_binary_stl_one_triangle();
-        let mesh = parse(&data).unwrap();
+    fn parse_binary_triangle() {
+        let mesh = parse(&fixture("triangle.stl")).unwrap();
 
         assert!(mesh.validate().is_ok());
+        assert_eq!(mesh.vertex_count(), 3);
         assert_eq!(mesh.triangle_count(), 1);
         assert!(mesh.has_normals());
         assert!(!mesh.has_uvs());
-        // stl_io deduplicates vertices — 3 unique positions
-        assert_eq!(mesh.vertex_count(), 3);
     }
 
     #[test]
-    fn parse_ascii_stl_single_triangle() {
-        let data = make_ascii_stl_one_triangle();
-        let mesh = parse(&data).unwrap();
+    fn parse_binary_quad() {
+        let mesh = parse(&fixture("quad.stl")).unwrap();
 
         assert!(mesh.validate().is_ok());
+        assert_eq!(mesh.vertex_count(), 4);
+        assert_eq!(mesh.triangle_count(), 2);
+    }
+
+    // ── ASCII STL ─────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_ascii_triangle() {
+        let mesh = parse(&fixture("triangle_ascii.stl")).unwrap();
+
+        assert!(mesh.validate().is_ok());
+        assert_eq!(mesh.vertex_count(), 3);
         assert_eq!(mesh.triangle_count(), 1);
         assert!(mesh.has_normals());
-        assert_eq!(mesh.vertex_count(), 3);
     }
 
-    #[test]
-    fn parse_binary_stl_quad() {
-        let data = make_binary_stl_quad();
-        let mesh = parse(&data).unwrap();
-
-        assert!(mesh.validate().is_ok());
-        assert_eq!(mesh.triangle_count(), 2);
-        // stl_io deduplicates: 4 unique vertices for a quad
-        assert_eq!(mesh.vertex_count(), 4);
-    }
-
-    // ── Options ───────────────────────────────────────────────────────
+    // ── Normals ───────────────────────────────────────────────────────
 
     #[test]
-    fn parse_with_recompute_normals() {
-        let data = make_binary_stl_one_triangle();
-        let options = StlOptions {
-            recompute_normals: true,
-        };
-        let mesh = parse_with_options(&data, &options).unwrap();
-
-        assert!(mesh.validate().is_ok());
-        assert!(mesh.has_normals());
-
-        // Computed normal for this triangle should be approximately [0, 0, 1]
+    fn face_normals_point_up() {
+        let mesh = parse(&fixture("triangle.stl")).unwrap();
         let normals = mesh.normals.as_ref().unwrap();
+
         for n in normals {
-            assert!(
-                (n[2] - 1.0).abs() < 0.01,
-                "expected Z≈1.0, got {:?}",
-                n
-            );
+            assert!((n[2] - 1.0).abs() < 0.001, "expected ≈ [0,0,1], got {n:?}");
         }
     }
 
     #[test]
-    fn stl_normals_match_face_normals() {
-        let data = make_binary_stl_one_triangle();
-        let mesh = parse(&data).unwrap();
+    fn recompute_normals() {
+        let opts = StlOptions { recompute_normals: true };
+        let mesh = parse_with_options(&fixture("triangle.stl"), &opts).unwrap();
 
-        // With face normals (default), all vertex normals should be [0, 0, 1]
+        assert!(mesh.validate().is_ok());
         let normals = mesh.normals.as_ref().unwrap();
         for n in normals {
-            assert!(
-                (n[2] - 1.0).abs() < 0.001,
-                "expected normal ≈ [0,0,1], got {:?}",
-                n
-            );
+            assert!((n[2] - 1.0).abs() < 0.01, "expected Z≈1.0, got {n:?}");
         }
     }
 
@@ -365,42 +268,32 @@ endsolid test"
 
     #[test]
     fn empty_stl_returns_error() {
-        // Valid binary STL header with 0 triangles
+        // Valid header, 0 triangles
         let mut data = vec![0u8; 80];
         data.extend_from_slice(&0u32.to_le_bytes());
-
-        let result = parse(&data);
-        assert!(matches!(result, Err(StlError::EmptyMesh)));
+        assert!(matches!(parse(&data), Err(StlError::EmptyMesh)));
     }
 
     #[test]
-    fn garbage_bytes_returns_io_error() {
-        let data = b"not a valid stl file at all";
-        let result = parse(data);
-        assert!(result.is_err());
+    fn garbage_returns_error() {
+        assert!(parse(b"not a valid stl file at all").is_err());
     }
 
-    // ── compute_smooth_normals unit test ──────────────────────────────
+    // ── compute_smooth_normals ────────────────────────────────────────
 
     #[test]
-    fn compute_smooth_normals_single_triangle() {
+    fn smooth_normals_single_triangle() {
         let positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-        let indices = vec![0, 1, 2];
-
-        let normals = compute_smooth_normals(&positions, &indices);
+        let normals = compute_smooth_normals(&positions, &[0, 1, 2]);
 
         assert_eq!(normals.len(), 3);
-        // All normals should be [0, 0, 1] (right-hand rule: +Z)
         for n in &normals {
-            assert!((n[0]).abs() < 0.001);
-            assert!((n[1]).abs() < 0.001);
-            assert!((n[2] - 1.0).abs() < 0.001);
+            assert!((n[2] - 1.0).abs() < 0.001, "expected ≈ [0,0,1], got {n:?}");
         }
     }
 
     #[test]
-    fn compute_smooth_normals_empty() {
-        let normals = compute_smooth_normals(&[], &[]);
-        assert!(normals.is_empty());
+    fn smooth_normals_empty() {
+        assert!(compute_smooth_normals(&[], &[]).is_empty());
     }
 }

@@ -190,123 +190,54 @@ fn build_merged_mesh(
 mod tests {
     use super::*;
 
-    /// Minimal OBJ: a single triangle.
-    fn obj_triangle() -> Vec<u8> {
-        b"# single triangle
-v 0.0 0.0 0.0
-v 1.0 0.0 0.0
-v 0.0 1.0 0.0
-f 1 2 3
-"
-        .to_vec()
-    }
-
-    /// OBJ triangle with normals.
-    fn obj_triangle_with_normals() -> Vec<u8> {
-        b"v 0.0 0.0 0.0
-v 1.0 0.0 0.0
-v 0.0 1.0 0.0
-vn 0.0 0.0 1.0
-vn 0.0 0.0 1.0
-vn 0.0 0.0 1.0
-f 1//1 2//2 3//3
-"
-        .to_vec()
-    }
-
-    /// OBJ triangle with normals and UVs.
-    fn obj_triangle_full() -> Vec<u8> {
-        b"v 0.0 0.0 0.0
-v 1.0 0.0 0.0
-v 0.0 1.0 0.0
-vn 0.0 0.0 1.0
-vn 0.0 0.0 1.0
-vn 0.0 0.0 1.0
-vt 0.0 0.0
-vt 1.0 0.0
-vt 0.0 1.0
-f 1/1/1 2/2/2 3/3/3
-"
-        .to_vec()
-    }
-
-    /// OBJ with two named objects (quad split into two triangles).
-    fn obj_two_objects() -> Vec<u8> {
-        b"o tri1
-v 0.0 0.0 0.0
-v 1.0 0.0 0.0
-v 0.0 1.0 0.0
-f 1 2 3
-
-o tri2
-v 1.0 0.0 0.0
-v 1.0 1.0 0.0
-v 0.0 1.0 0.0
-f 1 2 3
-"
-        .to_vec()
-    }
-
-    /// OBJ with a quad face (needs triangulation).
-    fn obj_quad() -> Vec<u8> {
-        b"v 0.0 0.0 0.0
-v 1.0 0.0 0.0
-v 1.0 1.0 0.0
-v 0.0 1.0 0.0
-f 1 2 3 4
-"
-        .to_vec()
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
     }
 
     // ── Basic parsing ─────────────────────────────────────────────────
 
     #[test]
-    fn parse_single_triangle() {
-        let mesh = parse(&obj_triangle()).unwrap();
+    fn parse_triangle() {
+        let mesh = parse(&fixture("triangle.obj")).unwrap();
 
         assert!(mesh.validate().is_ok());
         assert_eq!(mesh.vertex_count(), 3);
         assert_eq!(mesh.triangle_count(), 1);
-        // OBJ without normals → computed normals
-        assert!(mesh.has_normals());
+        assert!(mesh.has_normals()); // computed — OBJ has no normals
         assert!(!mesh.has_uvs());
     }
 
     #[test]
-    fn parse_triangle_with_normals() {
-        let mesh = parse(&obj_triangle_with_normals()).unwrap();
+    fn parse_with_normals() {
+        let mesh = parse(&fixture("triangle_normals.obj")).unwrap();
 
         assert!(mesh.validate().is_ok());
         assert_eq!(mesh.vertex_count(), 3);
         assert!(mesh.has_normals());
 
-        // Normals should be approximately [0, 0, 1]
         let normals = mesh.normals.as_ref().unwrap();
         for n in normals {
-            assert!((n[2] - 1.0).abs() < 0.01, "expected Z≈1.0, got {:?}", n);
+            assert!((n[2] - 1.0).abs() < 0.01, "expected Z≈1.0, got {n:?}");
         }
     }
 
     #[test]
-    fn parse_triangle_with_normals_and_uvs() {
-        let mesh = parse(&obj_triangle_full()).unwrap();
+    fn parse_with_normals_and_uvs() {
+        let mesh = parse(&fixture("triangle_full.obj")).unwrap();
 
         assert!(mesh.validate().is_ok());
         assert!(mesh.has_normals());
         assert!(mesh.has_uvs());
-
-        let uvs = mesh.uvs.as_ref().unwrap();
-        assert_eq!(uvs.len(), 3);
+        assert_eq!(mesh.uvs.as_ref().unwrap().len(), 3);
     }
 
     // ── Multi-object merge ────────────────────────────────────────────
 
     #[test]
     fn parse_two_objects_merged() {
-        let mesh = parse(&obj_two_objects()).unwrap();
+        let mesh = parse(&fixture("two_objects.obj")).unwrap();
 
         assert!(mesh.validate().is_ok());
-        // Two separate objects, each with 3 verts
         assert_eq!(mesh.vertex_count(), 6);
         assert_eq!(mesh.triangle_count(), 2);
     }
@@ -315,31 +246,24 @@ f 1 2 3 4
 
     #[test]
     fn parse_quad_triangulated() {
-        let mesh = parse(&obj_quad()).unwrap();
+        let mesh = parse(&fixture("quad.obj")).unwrap();
 
         assert!(mesh.validate().is_ok());
         assert_eq!(mesh.vertex_count(), 4);
-        // Quad → 2 triangles
         assert_eq!(mesh.triangle_count(), 2);
     }
 
     // ── Options ───────────────────────────────────────────────────────
 
     #[test]
-    fn recompute_normals_option() {
-        let options = ObjOptions {
-            recompute_normals: true,
-            ..Default::default()
-        };
-        let mesh = parse_with_options(&obj_triangle_with_normals(), &options).unwrap();
+    fn recompute_normals() {
+        let opts = ObjOptions { recompute_normals: true, ..Default::default() };
+        let mesh = parse_with_options(&fixture("triangle_normals.obj"), &opts).unwrap();
 
         assert!(mesh.validate().is_ok());
-        assert!(mesh.has_normals());
-
-        // Recomputed normals should still be ≈ [0, 0, 1] for this geometry
         let normals = mesh.normals.as_ref().unwrap();
         for n in normals {
-            assert!((n[2] - 1.0).abs() < 0.01, "expected Z≈1.0, got {:?}", n);
+            assert!((n[2] - 1.0).abs() < 0.01, "expected Z≈1.0, got {n:?}");
         }
     }
 
@@ -347,31 +271,25 @@ f 1 2 3 4
 
     #[test]
     fn empty_obj_returns_error() {
-        let data = b"# empty OBJ file\n";
-        let result = parse(data);
+        let result = parse(b"# empty OBJ file\n");
         assert!(
             matches!(result, Err(ObjError::EmptyFile | ObjError::EmptyMesh)),
-            "expected EmptyFile or EmptyMesh, got {:?}",
-            result,
+            "expected EmptyFile or EmptyMesh, got {result:?}",
         );
     }
 
     #[test]
-    fn obj_with_only_vertices_no_faces() {
-        let data = b"v 0 0 0\nv 1 0 0\nv 0 1 0\n";
-        let result = parse(data);
-        // tobj may return an empty model list or a model with no indices
-        assert!(result.is_err());
+    fn vertices_only_no_faces() {
+        assert!(parse(b"v 0 0 0\nv 1 0 0\nv 0 1 0\n").is_err());
     }
 
     // ── Memory estimation ─────────────────────────────────────────────
 
     #[test]
     fn memory_estimate_reasonable() {
-        let mesh = parse(&obj_triangle()).unwrap();
+        let mesh = parse(&fixture("triangle.obj")).unwrap();
         let mem = mesh.estimated_memory_bytes();
-        // 3 positions (36) + 3 normals (36) + 3 indices (12) = 84
         assert!(mem > 0);
-        assert!(mem < 1024); // single triangle shouldn't be huge
+        assert!(mem < 1024);
     }
 }

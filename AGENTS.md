@@ -174,8 +174,8 @@ cargo check -p loadfu
 # Bevy feature compiles
 cargo check -p loadfu --features bevy
 
-# Tests pass
-cargo test -p loadfu
+# Tests pass (nextest: hierarchical, colored, parallel)
+cargo nextest run -p loadfu
 ```
 
 ## Landing the Plane (Session Completion)
@@ -189,7 +189,7 @@ cargo test -p loadfu
    ```bash
    cargo check -p loadfu
    cargo check -p loadfu --features bevy
-   cargo test -p loadfu
+   cargo nextest run -p loadfu
    ```
 3. **Update issue status** — Close finished work, update in-progress items
 4. **Describe and push changes** — This is MANDATORY:

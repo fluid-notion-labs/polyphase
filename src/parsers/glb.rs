@@ -349,336 +349,12 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
 mod tests {
     use super::*;
 
-    /// Build a minimal valid GLB (glTF 2.0 binary) containing one triangle.
-    ///
-    /// GLB layout:
-    /// - 12-byte header: magic, version, total length
-    /// - JSON chunk: minimal glTF JSON
-    /// - BIN chunk: interleaved position + index data
-    fn make_minimal_glb() -> Vec<u8> {
-        // ── Buffer data (BIN chunk payload) ───────────────────────────
-        // 3 positions: VEC3 float × 3 = 36 bytes
-        // 3 indices: u16 × 3 = 6 bytes, padded to 8 for alignment
-        let mut bin_data: Vec<u8> = Vec::new();
-
-        // Position 0: [0, 0, 0]
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-        // Position 1: [1, 0, 0]
-        bin_data.extend_from_slice(&1.0f32.to_le_bytes());
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-        // Position 2: [0, 1, 0]
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-        bin_data.extend_from_slice(&1.0f32.to_le_bytes());
-        bin_data.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Indices: [0, 1, 2] as u16
-        bin_data.extend_from_slice(&0u16.to_le_bytes());
-        bin_data.extend_from_slice(&1u16.to_le_bytes());
-        bin_data.extend_from_slice(&2u16.to_le_bytes());
-
-        // Pad to 4-byte alignment
-        while bin_data.len() % 4 != 0 {
-            bin_data.push(0);
-        }
-
-        let bin_len = bin_data.len() as u32; // 44
-
-        // ── JSON chunk ────────────────────────────────────────────────
-        let json_str = format!(
-            r#"{{
-  "asset": {{ "version": "2.0" }},
-  "buffers": [{{ "byteLength": {bin_len} }}],
-  "bufferViews": [
-    {{ "buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962 }},
-    {{ "buffer": 0, "byteOffset": 36, "byteLength": 6, "target": 34963 }}
-  ],
-  "accessors": [
-    {{
-      "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
-      "max": [1.0, 1.0, 0.0], "min": [0.0, 0.0, 0.0]
-    }},
-    {{
-      "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"
-    }}
-  ],
-  "meshes": [{{
-    "primitives": [{{
-      "attributes": {{ "POSITION": 0 }},
-      "indices": 1,
-      "mode": 4
-    }}]
-  }}],
-  "nodes": [{{ "mesh": 0 }}],
-  "scenes": [{{ "nodes": [0] }}],
-  "scene": 0
-}}"#
-        );
-
-        let mut json_bytes = json_str.into_bytes();
-        // Pad JSON to 4-byte alignment with spaces (per GLB spec).
-        while json_bytes.len() % 4 != 0 {
-            json_bytes.push(b' ');
-        }
-
-        let json_chunk_len = json_bytes.len() as u32;
-
-        // ── Assemble GLB ──────────────────────────────────────────────
-        let total_length = 12 // GLB header
-            + 8 + json_chunk_len  // JSON chunk header + data
-            + 8 + bin_len; // BIN chunk header + data
-
-        let mut glb = Vec::with_capacity(total_length as usize);
-
-        // GLB header
-        glb.extend_from_slice(b"glTF"); // magic
-        glb.extend_from_slice(&2u32.to_le_bytes()); // version
-        glb.extend_from_slice(&total_length.to_le_bytes()); // total length
-
-        // JSON chunk
-        glb.extend_from_slice(&json_chunk_len.to_le_bytes()); // chunk length
-        glb.extend_from_slice(&0x4E4F534Au32.to_le_bytes()); // chunk type: JSON
-        glb.extend_from_slice(&json_bytes);
-
-        // BIN chunk
-        glb.extend_from_slice(&bin_len.to_le_bytes()); // chunk length
-        glb.extend_from_slice(&0x004E4942u32.to_le_bytes()); // chunk type: BIN
-        glb.extend_from_slice(&bin_data);
-
-        glb
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!("tests/fixtures/{name}")).expect("fixture not found")
     }
 
-    /// Build a GLB with two mesh primitives.
-    fn make_two_primitive_glb() -> Vec<u8> {
-        // Two triangles in the same buffer, separate primitives.
-        let mut bin_data: Vec<u8> = Vec::new();
-
-        // Primitive 0 positions (3 verts)
-        for &v in &[0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
-            bin_data.extend_from_slice(&v.to_le_bytes());
-        }
-        // Primitive 0 indices
-        for &i in &[0u16, 1, 2] {
-            bin_data.extend_from_slice(&i.to_le_bytes());
-        }
-        // Pad to 4-byte alignment
-        while bin_data.len() % 4 != 0 {
-            bin_data.push(0);
-        }
-
-        let prim1_idx_offset = bin_data.len();
-
-        // Primitive 1 positions (3 verts)
-        for &v in &[2.0f32, 0.0, 0.0, 3.0, 0.0, 0.0, 2.0, 1.0, 0.0] {
-            bin_data.extend_from_slice(&v.to_le_bytes());
-        }
-        // Primitive 1 indices
-        for &i in &[0u16, 1, 2] {
-            bin_data.extend_from_slice(&i.to_le_bytes());
-        }
-        while bin_data.len() % 4 != 0 {
-            bin_data.push(0);
-        }
-
-        let bin_len = bin_data.len() as u32;
-
-        let json_str = format!(
-            r#"{{
-  "asset": {{ "version": "2.0" }},
-  "buffers": [{{ "byteLength": {bin_len} }}],
-  "bufferViews": [
-    {{ "buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962 }},
-    {{ "buffer": 0, "byteOffset": 36, "byteLength": 6, "target": 34963 }},
-    {{ "buffer": 0, "byteOffset": {prim1_idx_offset}, "byteLength": 36, "target": 34962 }},
-    {{ "buffer": 0, "byteOffset": {prim1_idx_end}, "byteLength": 6, "target": 34963 }}
-  ],
-  "accessors": [
-    {{
-      "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
-      "max": [1.0, 1.0, 0.0], "min": [0.0, 0.0, 0.0]
-    }},
-    {{
-      "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"
-    }},
-    {{
-      "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC3",
-      "max": [3.0, 1.0, 0.0], "min": [2.0, 0.0, 0.0]
-    }},
-    {{
-      "bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"
-    }}
-  ],
-  "meshes": [{{
-    "primitives": [
-      {{ "attributes": {{ "POSITION": 0 }}, "indices": 1, "mode": 4 }},
-      {{ "attributes": {{ "POSITION": 2 }}, "indices": 3, "mode": 4 }}
-    ]
-  }}],
-  "nodes": [{{ "mesh": 0 }}],
-  "scenes": [{{ "nodes": [0] }}],
-  "scene": 0
-}}"#,
-            prim1_idx_end = prim1_idx_offset + 36,
-        );
-
-        let mut json_bytes = json_str.into_bytes();
-        while json_bytes.len() % 4 != 0 {
-            json_bytes.push(b' ');
-        }
-
-        let json_chunk_len = json_bytes.len() as u32;
-        let total_length = 12 + 8 + json_chunk_len + 8 + bin_len;
-
-        let mut glb = Vec::with_capacity(total_length as usize);
-
-        glb.extend_from_slice(b"glTF");
-        glb.extend_from_slice(&2u32.to_le_bytes());
-        glb.extend_from_slice(&total_length.to_le_bytes());
-
-        glb.extend_from_slice(&json_chunk_len.to_le_bytes());
-        glb.extend_from_slice(&0x4E4F534Au32.to_le_bytes());
-        glb.extend_from_slice(&json_bytes);
-
-        glb.extend_from_slice(&bin_len.to_le_bytes());
-        glb.extend_from_slice(&0x004E4942u32.to_le_bytes());
-        glb.extend_from_slice(&bin_data);
-
-        glb
-    }
-
-    // ── Basic parsing ─────────────────────────────────────────────────
-
-    #[test]
-    fn parse_minimal_glb_single_triangle() {
-        let glb = make_minimal_glb();
-        let meshes = parse(&glb).unwrap();
-
-        assert_eq!(meshes.len(), 1);
-        let mesh = &meshes[0];
-        assert!(mesh.validate().is_ok());
-        assert_eq!(mesh.vertex_count(), 3);
-        assert_eq!(mesh.triangle_count(), 1);
-        // No normals in the GLB → computed normals
-        assert!(mesh.has_normals());
-        assert!(!mesh.has_uvs());
-    }
-
-    #[test]
-    fn parse_minimal_glb_positions_correct() {
-        let glb = make_minimal_glb();
-        let meshes = parse(&glb).unwrap();
-        let mesh = &meshes[0];
-
-        assert_eq!(mesh.positions[0], [0.0, 0.0, 0.0]);
-        assert_eq!(mesh.positions[1], [1.0, 0.0, 0.0]);
-        assert_eq!(mesh.positions[2], [0.0, 1.0, 0.0]);
-    }
-
-    #[test]
-    fn parse_minimal_glb_indices_correct() {
-        let glb = make_minimal_glb();
-        let meshes = parse(&glb).unwrap();
-        let mesh = &meshes[0];
-
-        assert_eq!(mesh.indices, vec![0, 1, 2]);
-    }
-
-    // ── Multi-primitive ───────────────────────────────────────────────
-
-    #[test]
-    fn parse_two_primitives() {
-        let glb = make_two_primitive_glb();
-        let meshes = parse(&glb).unwrap();
-
-        assert_eq!(meshes.len(), 2);
-        for mesh in &meshes {
-            assert!(mesh.validate().is_ok());
-            assert_eq!(mesh.vertex_count(), 3);
-            assert_eq!(mesh.triangle_count(), 1);
-        }
-    }
-
-    // ── Merged parse ──────────────────────────────────────────────────
-
-    #[test]
-    fn parse_merged_single() {
-        let glb = make_minimal_glb();
-        let mesh = parse_merged(&glb).unwrap();
-
-        assert!(mesh.validate().is_ok());
-        assert_eq!(mesh.vertex_count(), 3);
-        assert_eq!(mesh.triangle_count(), 1);
-    }
-
-    #[test]
-    fn parse_merged_two_primitives() {
-        let glb = make_two_primitive_glb();
-        let mesh = parse_merged(&glb).unwrap();
-
-        assert!(mesh.validate().is_ok());
-        assert_eq!(mesh.vertex_count(), 6);
-        assert_eq!(mesh.triangle_count(), 2);
-        // Second triangle indices should be offset by 3
-        assert_eq!(mesh.indices[3], 3);
-        assert_eq!(mesh.indices[4], 4);
-        assert_eq!(mesh.indices[5], 5);
-    }
-
-    // ── Merge helper ──────────────────────────────────────────────────
-
-    #[test]
-    fn merge_preserves_normals() {
-        let m1 = MeshData {
-            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
-            uvs: None,
-            indices: vec![0, 1, 2],
-        };
-        let m2 = MeshData {
-            positions: vec![[2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [2.0, 1.0, 0.0]],
-            normals: Some(vec![[0.0, 0.0, -1.0]; 3]),
-            uvs: None,
-            indices: vec![0, 1, 2],
-        };
-
-        let merged = merge_meshes(vec![m1, m2]);
-        assert!(merged.validate().is_ok());
-        assert_eq!(merged.vertex_count(), 6);
-
-        let normals = merged.normals.as_ref().unwrap();
-        assert_eq!(normals[0], [0.0, 0.0, 1.0]);
-        assert_eq!(normals[3], [0.0, 0.0, -1.0]);
-    }
-
-    #[test]
-    fn merge_fills_missing_normals() {
-        let m1 = MeshData {
-            positions: vec![[0.0; 3]; 3],
-            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
-            uvs: None,
-            indices: vec![0, 1, 2],
-        };
-        let m2 = MeshData {
-            positions: vec![[1.0; 3]; 3],
-            normals: None, // missing
-            uvs: None,
-            indices: vec![0, 1, 2],
-        };
-
-        let merged = merge_meshes(vec![m1, m2]);
-        let normals = merged.normals.as_ref().unwrap();
-        assert_eq!(normals.len(), 6);
-        // Filled normals default to [0, 1, 0]
-        assert_eq!(normals[3], [0.0, 1.0, 0.0]);
-    }
-
-    // ── Error cases ───────────────────────────────────────────────────
-
-    #[test]
-    fn empty_glb_returns_error() {
-        // Valid GLB header but no meshes
+    /// Minimal valid GLB with no meshes, for error testing.
+    fn empty_glb() -> Vec<u8> {
         let json_str = r#"{"asset":{"version":"2.0"}}"#;
         let mut json_bytes = json_str.as_bytes().to_vec();
         while json_bytes.len() % 4 != 0 {
@@ -694,29 +370,101 @@ mod tests {
         glb.extend_from_slice(&json_chunk_len.to_le_bytes());
         glb.extend_from_slice(&0x4E4F534Au32.to_le_bytes());
         glb.extend_from_slice(&json_bytes);
+        glb
+    }
 
-        let result = parse(&glb);
-        assert!(matches!(result, Err(GlbError::EmptyFile)));
+    // ── Cube fixture: 24 verts, 36 indices, 12 triangles ─────────────
+
+    #[test]
+    fn parse_cube() {
+        let meshes = parse(&fixture("cube.glb")).unwrap();
+
+        assert_eq!(meshes.len(), 1);
+        let mesh = &meshes[0];
+        assert!(mesh.validate().is_ok());
+        assert_eq!(mesh.vertex_count(), 24);
+        assert_eq!(mesh.triangle_count(), 12);
+        assert!(mesh.has_normals());
+        assert!(!mesh.has_uvs());
     }
 
     #[test]
-    fn garbage_bytes_returns_error() {
-        let result = parse(b"this is not a glb file");
-        assert!(result.is_err());
-    }
-
-    // ── Computed normals ──────────────────────────────────────────────
-
-    #[test]
-    fn computed_normals_are_reasonable() {
-        let glb = make_minimal_glb();
-        let meshes = parse(&glb).unwrap();
+    fn cube_positions_bounded() {
+        let meshes = parse(&fixture("cube.glb")).unwrap();
         let mesh = &meshes[0];
 
-        let normals = mesh.normals.as_ref().unwrap();
-        // Triangle in XY plane → normal should be ≈ [0, 0, 1]
-        for n in normals {
-            assert!((n[2] - 1.0).abs() < 0.01, "expected Z ≈ 1.0, got {:?}", n);
+        for pos in &mesh.positions {
+            for &v in pos {
+                assert!(v.abs() <= 0.5 + f32::EPSILON, "position out of range: {pos:?}");
+            }
         }
+    }
+
+    #[test]
+    fn cube_normals_are_unit_length() {
+        let meshes = parse(&fixture("cube.glb")).unwrap();
+        let normals = meshes[0].normals.as_ref().unwrap();
+
+        for n in normals {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            assert!((len - 1.0).abs() < 0.01, "normal not unit length: {n:?}");
+        }
+    }
+
+    // ── Merged parse ──────────────────────────────────────────────────
+
+    #[test]
+    fn parse_merged_cube() {
+        let mesh = parse_merged(&fixture("cube.glb")).unwrap();
+
+        assert!(mesh.validate().is_ok());
+        assert_eq!(mesh.vertex_count(), 24);
+        assert_eq!(mesh.triangle_count(), 12);
+    }
+
+    // ── Merge helper (unit) ───────────────────────────────────────────
+
+    #[test]
+    fn merge_preserves_normals() {
+        let m1 = MeshData::new(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![0, 1, 2],
+        ).with_normals(vec![[0.0, 0.0, 1.0]; 3]);
+        let m2 = MeshData::new(
+            vec![[2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [2.0, 1.0, 0.0]],
+            vec![0, 1, 2],
+        ).with_normals(vec![[0.0, 0.0, -1.0]; 3]);
+
+        let merged = merge_meshes(vec![m1, m2]);
+        assert!(merged.validate().is_ok());
+        assert_eq!(merged.vertex_count(), 6);
+
+        let normals = merged.normals.as_ref().unwrap();
+        assert_eq!(normals[0], [0.0, 0.0, 1.0]);
+        assert_eq!(normals[3], [0.0, 0.0, -1.0]);
+    }
+
+    #[test]
+    fn merge_fills_missing_normals() {
+        let m1 = MeshData::new(vec![[0.0; 3]; 3], vec![0, 1, 2])
+            .with_normals(vec![[0.0, 0.0, 1.0]; 3]);
+        let m2 = MeshData::new(vec![[1.0; 3]; 3], vec![0, 1, 2]);
+
+        let merged = merge_meshes(vec![m1, m2]);
+        let normals = merged.normals.as_ref().unwrap();
+        assert_eq!(normals.len(), 6);
+        assert_eq!(normals[3], [0.0, 1.0, 0.0]); // default fill
+    }
+
+    // ── Error cases ───────────────────────────────────────────────────
+
+    #[test]
+    fn empty_glb_returns_error() {
+        assert!(matches!(parse(&empty_glb()), Err(GlbError::EmptyFile)));
+    }
+
+    #[test]
+    fn garbage_returns_error() {
+        assert!(parse(b"this is not a glb file").is_err());
     }
 }
