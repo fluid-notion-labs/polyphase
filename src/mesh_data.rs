@@ -19,6 +19,7 @@ use thiserror::Error;
 /// - `indices` is non-empty and every index is `< positions.len()`.
 /// - If `normals` is `Some`, its length equals `positions.len()`.
 /// - If `uvs` is `Some`, its length equals `positions.len()`.
+/// - If `vertex_colors` is `Some`, its length equals `positions.len()`.
 /// - `indices.len()` is a multiple of 3 (triangle list).
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeshData {
@@ -35,6 +36,12 @@ pub struct MeshData {
     ///
     /// `None` for formats that never carry UVs (e.g. STL).
     pub uvs: Option<Vec<[f32; 2]>>,
+
+    /// Per-vertex colors as linear `[r, g, b, a]`.
+    ///
+    /// `None` for formats that don't carry vertex colors. Common in PLY
+    /// (scanner output) and supported by GLB.
+    pub vertex_colors: Option<Vec<[f32; 4]>>,
 
     /// Triangle indices into the `positions` (and `normals`/`uvs`) arrays.
     ///
@@ -86,6 +93,15 @@ pub enum MeshDataError {
         /// Number of positions (expected).
         positions: usize,
     },
+
+    /// `vertex_colors` length doesn't match `positions` length.
+    #[error("vertex_colors length ({colors}) doesn't match positions length ({positions})")]
+    VertexColorsLengthMismatch {
+        /// Number of vertex colors provided.
+        colors: usize,
+        /// Number of positions (expected).
+        positions: usize,
+    },
 }
 
 impl MeshData {
@@ -95,6 +111,7 @@ impl MeshData {
             positions,
             normals: None,
             uvs: None,
+            vertex_colors: None,
             indices,
         }
     }
@@ -108,6 +125,12 @@ impl MeshData {
     /// Builder-style setter for UVs.
     pub fn with_uvs(mut self, uvs: Vec<[f32; 2]>) -> Self {
         self.uvs = Some(uvs);
+        self
+    }
+
+    /// Builder-style setter for vertex colors.
+    pub fn with_vertex_colors(mut self, colors: Vec<[f32; 4]>) -> Self {
+        self.vertex_colors = Some(colors);
         self
     }
 
@@ -131,6 +154,11 @@ impl MeshData {
     /// Whether this mesh carries per-vertex UVs.
     pub fn has_uvs(&self) -> bool {
         self.uvs.is_some()
+    }
+
+    /// Whether this mesh carries per-vertex colors.
+    pub fn has_vertex_colors(&self) -> bool {
+        self.vertex_colors.is_some()
     }
 
     /// Validate the mesh data, returning the first error found (if any).
@@ -184,6 +212,16 @@ impl MeshData {
             }
         }
 
+        // Check vertex colors length
+        if let Some(ref colors) = self.vertex_colors {
+            if colors.len() != vertex_count {
+                return Err(MeshDataError::VertexColorsLengthMismatch {
+                    colors: colors.len(),
+                    positions: vertex_count,
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -204,9 +242,13 @@ impl MeshData {
             .uvs
             .as_ref()
             .map_or(0, |u| u.len() * std::mem::size_of::<[f32; 2]>());
+        let colors_bytes = self
+            .vertex_colors
+            .as_ref()
+            .map_or(0, |c| c.len() * std::mem::size_of::<[f32; 4]>());
         let indices_bytes = self.indices.len() * std::mem::size_of::<u32>();
 
-        positions_bytes + normals_bytes + uvs_bytes + indices_bytes
+        positions_bytes + normals_bytes + uvs_bytes + colors_bytes + indices_bytes
     }
 }
 
@@ -240,10 +282,12 @@ mod tests {
             vec![0, 1, 2],
         )
         .with_normals(vec![[0.0, 0.0, 1.0]; 3])
-        .with_uvs(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
+        .with_uvs(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        .with_vertex_colors(vec![[1.0, 0.0, 0.0, 1.0]; 3]);
 
         assert!(mesh.has_normals());
         assert!(mesh.has_uvs());
+        assert!(mesh.has_vertex_colors());
     }
 
     // ── Validation: valid cases ───────────────────────────────────────
@@ -353,6 +397,19 @@ mod tests {
     }
 
     #[test]
+    fn vertex_colors_length_mismatch() {
+        let mut mesh = sample_triangle();
+        mesh.vertex_colors = Some(vec![[1.0, 0.0, 0.0, 1.0]; 2]); // 2 colors, 3 positions
+        assert_eq!(
+            mesh.validate(),
+            Err(MeshDataError::VertexColorsLengthMismatch {
+                colors: 2,
+                positions: 3,
+            })
+        );
+    }
+
+    #[test]
     fn validated_returns_error() {
         let mesh = MeshData::new(vec![], vec![]);
         assert!(mesh.validated().is_err());
@@ -376,6 +433,7 @@ mod tests {
             positions: vec![[0.0; 3]; 100],
             normals: Some(vec![[0.0; 3]; 100]),
             uvs: Some(vec![[0.0; 2]; 100]),
+            vertex_colors: None,
             indices: vec![0; 300],
         };
         // positions: 100 * 12 = 1200
@@ -384,6 +442,22 @@ mod tests {
         // indices:   300 *  4 = 1200
         // total:                 4400
         assert_eq!(mesh.estimated_memory_bytes(), 4400);
+    }
+
+    #[test]
+    fn estimated_memory_with_vertex_colors() {
+        let mesh = MeshData {
+            positions: vec![[0.0; 3]; 100],
+            normals: None,
+            uvs: None,
+            vertex_colors: Some(vec![[1.0; 4]; 100]),
+            indices: vec![0; 300],
+        };
+        // positions: 100 * 12 = 1200
+        // colors:    100 * 16 = 1600
+        // indices:   300 *  4 = 1200
+        // total:                 4000
+        assert_eq!(mesh.estimated_memory_bytes(), 4000);
     }
 
     // ── Display for errors ────────────────────────────────────────────

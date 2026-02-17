@@ -29,6 +29,11 @@ impl From<MeshData> for Mesh {
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
         }
 
+        // Vertex colors — optional, linear RGBA.
+        if let Some(colors) = data.vertex_colors {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        }
+
         // Indices — always present, always u32
         mesh.insert_indices(Indices::U32(data.indices));
 
@@ -42,6 +47,7 @@ impl From<MeshData> for Mesh {
 mod tests {
     use super::*;
     use crate::test_util::{sample_triangle, sample_triangle_bare};
+    use crate::MeshData;
     use bevy::mesh::VertexAttributeValues;
 
     #[test]
@@ -112,7 +118,35 @@ mod tests {
         assert!(bevy_mesh.attribute(Mesh::ATTRIBUTE_POSITION).is_some());
         assert!(bevy_mesh.attribute(Mesh::ATTRIBUTE_NORMAL).is_none());
         assert!(bevy_mesh.attribute(Mesh::ATTRIBUTE_UV_0).is_none());
+        assert!(bevy_mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_none());
         assert!(bevy_mesh.indices().is_some());
+    }
+
+    #[test]
+    fn vertex_colors_convert() {
+        let mesh_data = MeshData::new(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![0, 1, 2],
+        )
+        .with_vertex_colors(vec![
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+        ]);
+        let bevy_mesh: Mesh = mesh_data.into();
+
+        let colors = bevy_mesh
+            .attribute(Mesh::ATTRIBUTE_COLOR)
+            .expect("should have vertex colors");
+        match colors {
+            VertexAttributeValues::Float32x4(cols) => {
+                assert_eq!(cols.len(), 3);
+                assert_eq!(cols[0], [1.0, 0.0, 0.0, 1.0]);
+                assert_eq!(cols[1], [0.0, 1.0, 0.0, 1.0]);
+                assert_eq!(cols[2], [0.0, 0.0, 1.0, 1.0]);
+            }
+            _ => panic!("unexpected vertex color attribute type"),
+        }
     }
 
     #[test]

@@ -117,6 +117,7 @@ fn build_mesh_with_stl_normals(stl: &stl_io::IndexedMesh) -> MeshData {
         positions,
         normals: Some(normals),
         uvs: None,
+        vertex_colors: None,
         indices,
     }
 }
@@ -142,6 +143,7 @@ fn build_mesh_auto_normals(stl: &stl_io::IndexedMesh) -> MeshData {
         positions,
         normals: Some(normals),
         uvs: None,
+        vertex_colors: None,
         indices,
     }
 }
@@ -251,7 +253,9 @@ mod tests {
 
     #[test]
     fn recompute_normals() {
-        let opts = StlOptions { recompute_normals: true };
+        let opts = StlOptions {
+            recompute_normals: true,
+        };
         let mesh = parse_with_options(&fixture("triangle.stl"), &opts).unwrap();
 
         assert!(mesh.validate().is_ok());

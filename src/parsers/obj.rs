@@ -178,6 +178,7 @@ fn build_merged_mesh(
         positions,
         normals,
         uvs,
+        vertex_colors: None,
         indices,
     })
 }
@@ -254,7 +255,10 @@ mod tests {
 
     #[test]
     fn recompute_normals() {
-        let opts = ObjOptions { recompute_normals: true, ..Default::default() };
+        let opts = ObjOptions {
+            recompute_normals: true,
+            ..Default::default()
+        };
         let mesh = parse_with_options(&fixture("triangle_normals.obj"), &opts).unwrap();
 
         assert!(mesh.validate().is_ok());

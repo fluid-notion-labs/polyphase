@@ -201,6 +201,7 @@ impl AssetData {
     pub fn capabilities(&self) -> AssetCapabilities {
         let has_normals = self.meshes.iter().any(|m| m.normals.is_some());
         let has_uvs = self.meshes.iter().any(|m| m.uvs.is_some());
+        let has_vertex_colors = self.meshes.iter().any(|m| m.vertex_colors.is_some());
         let has_materials = !self.materials.is_empty();
         let has_textures = self.materials.iter().any(|m| m.has_textures);
         let multi_object = self.meshes.len() > 1;
@@ -211,16 +212,11 @@ impl AssetData {
             .iter()
             .map(|m| {
                 let pos_bytes = m.positions.len() as u64 * 12; // 3 × f32
-                let norm_bytes = m
-                    .normals
-                    .as_ref()
-                    .map_or(0, |n| n.len() as u64 * 12);
-                let uv_bytes = m
-                    .uvs
-                    .as_ref()
-                    .map_or(0, |u| u.len() as u64 * 8); // 2 × f32
+                let norm_bytes = m.normals.as_ref().map_or(0, |n| n.len() as u64 * 12);
+                let uv_bytes = m.uvs.as_ref().map_or(0, |u| u.len() as u64 * 8); // 2 × f32
+                let color_bytes = m.vertex_colors.as_ref().map_or(0, |c| c.len() as u64 * 16); // 4 × f32
                 let idx_bytes = m.indices.len() as u64 * 4; // u32
-                pos_bytes + norm_bytes + uv_bytes + idx_bytes
+                pos_bytes + norm_bytes + uv_bytes + color_bytes + idx_bytes
             })
             .sum();
 
@@ -228,7 +224,7 @@ impl AssetData {
             topology: TopologyKind::TriangleList,
             has_normals,
             has_uvs,
-            has_vertex_colors: false, // TODO: vertex color support
+            has_vertex_colors,
             multi_object,
             has_materials,
             has_textures,

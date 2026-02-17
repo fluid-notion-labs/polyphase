@@ -131,6 +131,7 @@ fn extract_primitive(
         positions,
         normals,
         uvs,
+        vertex_colors: None,
         indices,
     })
 }
@@ -291,6 +292,7 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
 
     let any_normals = meshes.iter().any(|m| m.normals.is_some());
     let any_uvs = meshes.iter().any(|m| m.uvs.is_some());
+    let any_colors = meshes.iter().any(|m| m.vertex_colors.is_some());
 
     let mut positions = Vec::with_capacity(total_verts);
     let mut normals = if any_normals {
@@ -299,6 +301,11 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
         None
     };
     let mut uvs = if any_uvs {
+        Some(Vec::with_capacity(total_verts))
+    } else {
+        None
+    };
+    let mut vertex_colors = if any_colors {
         Some(Vec::with_capacity(total_verts))
     } else {
         None
@@ -326,6 +333,13 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
             }
         }
 
+        if let Some(ref mut out_colors) = vertex_colors {
+            match &mesh.vertex_colors {
+                Some(c) => out_colors.extend_from_slice(c),
+                None => out_colors.extend(std::iter::repeat([1.0, 1.0, 1.0, 1.0]).take(n_verts)),
+            }
+        }
+
         for &idx in &mesh.indices {
             indices.push(idx + vertex_offset);
         }
@@ -337,6 +351,7 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
         positions,
         normals,
         uvs,
+        vertex_colors,
         indices,
     }
 }
@@ -392,7 +407,10 @@ mod tests {
 
         for pos in &mesh.positions {
             for &v in pos {
-                assert!(v.abs() <= 0.5 + f32::EPSILON, "position out of range: {pos:?}");
+                assert!(
+                    v.abs() <= 0.5 + f32::EPSILON,
+                    "position out of range: {pos:?}"
+                );
             }
         }
     }
@@ -426,11 +444,13 @@ mod tests {
         let m1 = MeshData::new(
             vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             vec![0, 1, 2],
-        ).with_normals(vec![[0.0, 0.0, 1.0]; 3]);
+        )
+        .with_normals(vec![[0.0, 0.0, 1.0]; 3]);
         let m2 = MeshData::new(
             vec![[2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [2.0, 1.0, 0.0]],
             vec![0, 1, 2],
-        ).with_normals(vec![[0.0, 0.0, -1.0]; 3]);
+        )
+        .with_normals(vec![[0.0, 0.0, -1.0]; 3]);
 
         let merged = merge_meshes(vec![m1, m2]);
         assert!(merged.validate().is_ok());
@@ -443,8 +463,8 @@ mod tests {
 
     #[test]
     fn merge_fills_missing_normals() {
-        let m1 = MeshData::new(vec![[0.0; 3]; 3], vec![0, 1, 2])
-            .with_normals(vec![[0.0, 0.0, 1.0]; 3]);
+        let m1 =
+            MeshData::new(vec![[0.0; 3]; 3], vec![0, 1, 2]).with_normals(vec![[0.0, 0.0, 1.0]; 3]);
         let m2 = MeshData::new(vec![[1.0; 3]; 3], vec![0, 1, 2]);
 
         let merged = merge_meshes(vec![m1, m2]);

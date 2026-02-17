@@ -42,6 +42,26 @@ pub enum ObjError {
     EmptyMesh,
 }
 
+/// Errors from PLY parsing.
+#[derive(Debug, Error)]
+pub enum PlyError {
+    /// The PLY header is missing, malformed, or contains unsupported declarations.
+    #[error("PLY invalid header: {0}")]
+    InvalidHeader(String),
+
+    /// The PLY file uses an unsupported property type or encoding.
+    #[error("PLY unsupported format: {0}")]
+    UnsupportedFormat(String),
+
+    /// The PLY file parsed successfully but contained no vertices or faces.
+    #[error("PLY file contains no geometry")]
+    EmptyMesh,
+
+    /// I/O error reading PLY data.
+    #[error("PLY I/O error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
 /// Errors from GLB/glTF parsing.
 #[derive(Debug, Error)]
 pub enum GlbError {
@@ -88,6 +108,10 @@ pub enum LoadError {
     #[error("GLB: {0}")]
     Glb(#[from] GlbError),
 
+    /// Error loading a PLY file.
+    #[error("PLY: {0}")]
+    Ply(#[from] PlyError),
+
     /// The file extension was not recognised or the format is unsupported.
     #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
@@ -112,6 +136,7 @@ impl LoadError {
             Self::Stl(_) => Some("STL"),
             Self::Obj(_) => Some("OBJ"),
             Self::Glb(_) => Some("GLB"),
+            Self::Ply(_) => Some("PLY"),
             Self::Validation(_) | Self::UnsupportedFormat(_) | Self::Io(_) => None,
         }
     }
@@ -124,6 +149,26 @@ impl LoadError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ply_error_display() {
+        let err = PlyError::EmptyMesh;
+        assert_eq!(err.to_string(), "PLY file contains no geometry");
+
+        let err = PlyError::InvalidHeader("missing end_header".into());
+        assert!(err.to_string().contains("missing end_header"));
+
+        let err = PlyError::UnsupportedFormat("double precision".into());
+        assert!(err.to_string().contains("double precision"));
+    }
+
+    #[test]
+    fn load_error_from_ply() {
+        let ply_err = PlyError::EmptyMesh;
+        let load_err = LoadError::from(ply_err);
+        assert!(matches!(load_err, LoadError::Ply(PlyError::EmptyMesh)));
+        assert_eq!(load_err.format_name(), Some("PLY"));
+    }
 
     #[test]
     fn stl_error_display() {

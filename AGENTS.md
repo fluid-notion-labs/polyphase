@@ -197,6 +197,7 @@ Current fixtures:
 - **STL:** `triangle.stl` (binary), `triangle_ascii.stl`, `quad.stl` (binary)
 - **OBJ:** `triangle.obj`, `triangle_normals.obj`, `triangle_full.obj` (normals+UVs), `quad.obj`, `two_objects.obj`
 - **GLB:** `cube.glb`
+- **PLY:** `triangle.ply` (ASCII, normals), `triangle_binary.ply` (binary LE, normals), `triangle_colors.ply` (ASCII, normals+vertex colors), `quad.ply` (ASCII, n-gon triangulation test)
 
 When adding a new parser or feature, add a minimal fixture that exercises it.
 
@@ -217,7 +218,7 @@ When adding a new parser or feature, add a minimal fixture that exercises it.
 ### Test Counts
 
 Track rough test counts here so agents know what to expect:
-- **102 tests** as of Epic 2 completion (83 unit + 19 integration in `tests/pipeline.rs`)
+- **152 tests** as of Epic 5 completion (112 unit + 13 bevy-layer + 27 integration in `tests/pipeline.rs`)
 
 ## Verification
 

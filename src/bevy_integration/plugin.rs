@@ -1,7 +1,7 @@
 //! Bevy plugin that registers all loadfu asset loaders.
 //!
 //! Add [`LoadfuPlugin`] to your Bevy app to enable transparent loading of
-//! `.stl`, `.obj`, `.glb`, and `.gltf` files through the asset server.
+//! `.stl`, `.obj`, `.glb`, `.gltf`, and `.ply` files through the asset server.
 //!
 //! ```ignore
 //! app.add_plugins(LoadfuPlugin);
@@ -12,7 +12,7 @@
 
 use bevy::prelude::*;
 
-use super::asset_loaders::{GlbLoader, ObjLoader, StlLoader};
+use super::asset_loaders::{GlbLoader, ObjLoader, PlyLoader, StlLoader};
 
 /// Plugin that registers all loadfu asset loaders with Bevy.
 ///
@@ -20,6 +20,7 @@ use super::asset_loaders::{GlbLoader, ObjLoader, StlLoader};
 /// - [`StlLoader`] for `.stl` files
 /// - [`ObjLoader`] for `.obj` files
 /// - [`GlbLoader`] for `.glb` and `.gltf` files
+/// - [`PlyLoader`] for `.ply` files
 ///
 /// # Note on GLB/glTF
 ///
@@ -33,7 +34,7 @@ impl Plugin for LoadfuPlugin {
         app.register_asset_loader(StlLoader);
         app.register_asset_loader(ObjLoader);
         app.register_asset_loader(GlbLoader);
-
+        app.register_asset_loader(PlyLoader);
     }
 }
 

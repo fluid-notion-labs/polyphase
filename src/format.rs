@@ -19,7 +19,10 @@ pub enum MeshFormat {
     Gltf,
     /// glTF 2.0 binary container — same capabilities as glTF, single-file packaging.
     Glb,
-    // Future: DracoGlb, SvMesh, Ply
+    /// PLY (Stanford Triangle Format) — vertex data with optional normals, UVs,
+    /// and vertex colors. Common in 3D scanning. ASCII and binary variants.
+    Ply,
+    // Future: DracoGlb, SvMesh
 }
 
 impl MeshFormat {
@@ -42,6 +45,7 @@ impl MeshFormat {
             "obj" => Some(Self::Obj),
             "gltf" => Some(Self::Gltf),
             "glb" => Some(Self::Glb),
+            "ply" => Some(Self::Ply),
             _ => None,
         }
     }
@@ -74,13 +78,18 @@ impl MeshFormat {
         matches!(self, Self::Gltf | Self::Glb)
     }
 
+    /// Returns `true` if this format is PLY.
+    pub fn is_ply(&self) -> bool {
+        matches!(self, Self::Ply)
+    }
+
     /// Returns `true` if this format loads directly as a single mesh
     /// (not via a scene/glTF intermediate).
     ///
     /// Direct mesh formats (STL, OBJ) produce geometry without scene structure.
     /// glTF formats go through scene parsing and may contain multiple meshes.
     pub fn is_direct_mesh(&self) -> bool {
-        matches!(self, Self::Stl | Self::Obj)
+        matches!(self, Self::Stl | Self::Obj | Self::Ply)
     }
 
     /// Human-readable label for display in UI and log messages.
@@ -90,6 +99,7 @@ impl MeshFormat {
             Self::Obj => "OBJ",
             Self::Gltf => "glTF",
             Self::Glb => "GLB",
+            Self::Ply => "PLY",
         }
     }
 
@@ -102,12 +112,13 @@ impl MeshFormat {
             Self::Obj => &["obj"],
             Self::Gltf => &["gltf"],
             Self::Glb => &["glb"],
+            Self::Ply => &["ply"],
         }
     }
 
     /// Returns an iterator over all known formats.
     pub fn all() -> impl Iterator<Item = MeshFormat> {
-        [Self::Stl, Self::Obj, Self::Gltf, Self::Glb].into_iter()
+        [Self::Stl, Self::Obj, Self::Gltf, Self::Glb, Self::Ply].into_iter()
     }
 
     /// Pre-parse capabilities knowable from the format alone.
@@ -171,6 +182,19 @@ impl MeshFormat {
                 supports_mmap: false,
                 supports_streaming: false,
             },
+            Self::Ply => AssetCapabilities {
+                topology: TopologyKind::TriangleList,
+                has_normals: true,          // PLY often has normals
+                has_uvs: true,              // PLY can have UVs
+                has_vertex_colors: true,    // PLY commonly has vertex colors (scanners)
+                multi_object: false,        // PLY is single mesh
+                has_materials: false,       // no material system
+                has_textures: false,        // no texture references
+                parse_cost: ParseCost::Low, // binary is fast; ASCII is medium
+                estimated_memory: None,
+                supports_mmap: false,
+                supports_streaming: false,
+            },
         }
     }
 }
@@ -199,6 +223,7 @@ mod tests {
         assert_eq!(MeshFormat::from_extension("obj"), Some(MeshFormat::Obj));
         assert_eq!(MeshFormat::from_extension("gltf"), Some(MeshFormat::Gltf));
         assert_eq!(MeshFormat::from_extension("glb"), Some(MeshFormat::Glb));
+        assert_eq!(MeshFormat::from_extension("ply"), Some(MeshFormat::Ply));
     }
 
     #[test]
@@ -207,18 +232,19 @@ mod tests {
         assert_eq!(MeshFormat::from_extension("OBJ"), Some(MeshFormat::Obj));
         assert_eq!(MeshFormat::from_extension("GLTF"), Some(MeshFormat::Gltf));
         assert_eq!(MeshFormat::from_extension("GLB"), Some(MeshFormat::Glb));
+        assert_eq!(MeshFormat::from_extension("PLY"), Some(MeshFormat::Ply));
     }
 
     #[test]
     fn from_extension_mixed_case() {
         assert_eq!(MeshFormat::from_extension("Stl"), Some(MeshFormat::Stl));
         assert_eq!(MeshFormat::from_extension("gLtF"), Some(MeshFormat::Gltf));
+        assert_eq!(MeshFormat::from_extension("Ply"), Some(MeshFormat::Ply));
     }
 
     #[test]
     fn from_extension_unknown() {
         assert_eq!(MeshFormat::from_extension("fbx"), None);
-        assert_eq!(MeshFormat::from_extension("ply"), None);
         assert_eq!(MeshFormat::from_extension(""), None);
         assert_eq!(MeshFormat::from_extension("txt"), None);
     }
@@ -238,6 +264,10 @@ mod tests {
         assert_eq!(
             MeshFormat::from_path(Path::new("scene.gltf")),
             Some(MeshFormat::Gltf)
+        );
+        assert_eq!(
+            MeshFormat::from_path(Path::new("scan.ply")),
+            Some(MeshFormat::Ply)
         );
     }
 
@@ -260,6 +290,16 @@ mod tests {
         assert!(!MeshFormat::Obj.is_gltf());
         assert!(MeshFormat::Gltf.is_gltf());
         assert!(MeshFormat::Glb.is_gltf());
+        assert!(!MeshFormat::Ply.is_gltf());
+    }
+
+    #[test]
+    fn is_ply() {
+        assert!(!MeshFormat::Stl.is_ply());
+        assert!(!MeshFormat::Obj.is_ply());
+        assert!(!MeshFormat::Gltf.is_ply());
+        assert!(!MeshFormat::Glb.is_ply());
+        assert!(MeshFormat::Ply.is_ply());
     }
 
     #[test]
@@ -268,6 +308,7 @@ mod tests {
         assert!(MeshFormat::Obj.is_direct_mesh());
         assert!(!MeshFormat::Gltf.is_direct_mesh());
         assert!(!MeshFormat::Glb.is_direct_mesh());
+        assert!(MeshFormat::Ply.is_direct_mesh());
     }
 
     #[test]
@@ -289,6 +330,7 @@ mod tests {
         assert_eq!(MeshFormat::Obj.label(), "OBJ");
         assert_eq!(MeshFormat::Gltf.label(), "glTF");
         assert_eq!(MeshFormat::Glb.label(), "GLB");
+        assert_eq!(MeshFormat::Ply.label(), "PLY");
     }
 
     #[test]
@@ -318,11 +360,12 @@ mod tests {
     #[test]
     fn all_returns_every_variant() {
         let all: Vec<MeshFormat> = MeshFormat::all().collect();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 5);
         assert!(all.contains(&MeshFormat::Stl));
         assert!(all.contains(&MeshFormat::Obj));
         assert!(all.contains(&MeshFormat::Gltf));
         assert!(all.contains(&MeshFormat::Glb));
+        assert!(all.contains(&MeshFormat::Ply));
     }
 
     // ── Static capabilities ───────────────────────────────────────────
@@ -371,6 +414,19 @@ mod tests {
         assert!(cap.multi_object);
         assert!(cap.has_materials);
         assert!(cap.has_textures);
+        assert_eq!(cap.parse_cost, ParseCost::Low);
+    }
+
+    #[test]
+    fn ply_static_capabilities() {
+        let cap = MeshFormat::Ply.static_capabilities();
+        assert_eq!(cap.topology, TopologyKind::TriangleList);
+        assert!(cap.has_normals);
+        assert!(cap.has_uvs);
+        assert!(cap.has_vertex_colors);
+        assert!(!cap.multi_object);
+        assert!(!cap.has_materials);
+        assert!(!cap.has_textures);
         assert_eq!(cap.parse_cost, ParseCost::Low);
     }
 

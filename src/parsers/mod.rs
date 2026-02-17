@@ -6,7 +6,9 @@
 //! - [`stl`] — STL (binary and ASCII) via `stl_io`
 //! - [`obj`] — OBJ (Wavefront) via `tobj`
 //! - [`glb`] — glTF 2.0 binary/text via `gltf`
+//! - [`ply`] — PLY (Stanford Triangle Format), hand-rolled parser
 
 pub mod glb;
 pub mod obj;
+pub mod ply;
 pub mod stl;

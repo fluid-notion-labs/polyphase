@@ -44,7 +44,7 @@ pub mod bevy_integration;
 // ── Public API re-exports ─────────────────────────────────────────────
 
 pub use capabilities::{AssetCapabilities, AssetData, MaterialData, ParseCost, TopologyKind};
-pub use error::{GlbError, LoadError, ObjError, StlError};
+pub use error::{GlbError, LoadError, ObjError, PlyError, StlError};
 pub use format::MeshFormat;
 pub use mesh_data::{MeshData, MeshDataError};
 
@@ -52,8 +52,8 @@ pub use mesh_data::{MeshData, MeshDataError};
 
 #[cfg(feature = "bevy")]
 pub use bevy_integration::{
-    GlbLoader, GlbLoaderSettings, LoadfuPlugin, ObjLoader, ObjLoaderSettings, StlLoader,
-    StlLoaderSettings,
+    GlbLoader, GlbLoaderSettings, LoadfuPlugin, ObjLoader, ObjLoaderSettings, PlyLoader,
+    PlyLoaderSettings, StlLoader, StlLoaderSettings,
 };
 
 // ── Shared test utilities ─────────────────────────────────────────────
@@ -73,6 +73,7 @@ pub(crate) mod test_util {
             positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
             uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+            vertex_colors: None,
             indices: vec![0, 1, 2],
         }
     }

@@ -14,8 +14,8 @@ use bevy::mesh::Mesh;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{GlbError, ObjError, StlError};
-use crate::parsers::{glb, obj, stl};
+use crate::error::{GlbError, ObjError, PlyError, StlError};
+use crate::parsers::{glb, obj, ply, stl};
 
 // ===========================================================================
 // STL
@@ -175,10 +175,7 @@ impl AssetLoader for GlbLoader {
         load_context: &mut LoadContext<'_>,
     ) -> Result<Mesh, GlbError> {
         let mut bytes = Vec::new();
-        reader
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(GlbError::Io)?;
+        reader.read_to_end(&mut bytes).await.map_err(GlbError::Io)?;
 
         if settings.merge {
             // Merge all primitives into one mesh
@@ -206,6 +203,53 @@ impl AssetLoader for GlbLoader {
 
     fn extensions(&self) -> &[&str] {
         &["glb", "gltf"]
+    }
+}
+
+// ===========================================================================
+// PLY
+// ===========================================================================
+
+/// Settings for the PLY asset loader.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PlyLoaderSettings {
+    /// If true, recompute smooth vertex normals from geometry instead of
+    /// using normals from the PLY file (if present).
+    #[serde(default)]
+    pub recompute_normals: bool,
+}
+
+/// Bevy [`AssetLoader`] for `.ply` files.
+///
+/// Delegates to [`parsers::ply::parse`](crate::parsers::ply::parse) and
+/// converts the resulting [`MeshData`](crate::MeshData) into a Bevy [`Mesh`].
+#[derive(Default, Debug, Clone, Copy, bevy::reflect::TypePath)]
+pub struct PlyLoader;
+
+impl AssetLoader for PlyLoader {
+    type Asset = Mesh;
+    type Settings = PlyLoaderSettings;
+    type Error = PlyError;
+
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        settings: &PlyLoaderSettings,
+        _load_context: &mut LoadContext<'_>,
+    ) -> Result<Mesh, PlyError> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await.map_err(PlyError::Io)?;
+
+        let opts = ply::PlyOptions {
+            recompute_normals: settings.recompute_normals,
+        };
+        let mesh_data = ply::parse_with_options(&bytes, &opts)?;
+
+        Ok(mesh_data.into())
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["ply"]
     }
 }
 
@@ -254,5 +298,19 @@ mod tests {
     fn glb_loader_extensions() {
         let loader = GlbLoader;
         assert_eq!(loader.extensions(), &["glb", "gltf"]);
+    }
+
+    // ── PLY ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn ply_settings_default() {
+        let s = PlyLoaderSettings::default();
+        assert!(!s.recompute_normals);
+    }
+
+    #[test]
+    fn ply_loader_extensions() {
+        let loader = PlyLoader;
+        assert_eq!(loader.extensions(), &["ply"]);
     }
 }

@@ -34,6 +34,7 @@ crates/loadfu/
       stl.rs            # STL bytes → MeshData (extract from seaview)
       obj.rs            # OBJ bytes → MeshData (extract from seaview)
       glb.rs            # GLB bytes → MeshData (extend from bin/ seed code, replaces bevy_gltf delegation)
+      ply.rs            # PLY bytes → MeshData (hand-rolled parser, ASCII + binary LE/BE)
     bevy/               # #[cfg(feature = "bevy")] only
       mod.rs
       plugin.rs         # LoadfuPlugin — registers loaders
@@ -100,12 +101,22 @@ loadfu = { path = "../loadfu" }
 
 `bin/debug_loader.rs::parse_glb_stats` and `bin/timeline_debug.rs::parse_glb_frame_size` already use `gltf::import` directly — walking meshes, primitives, and accessors. Currently stats-only (vertex/index counts). Extend to read position/normal/index buffer data into `MeshData`. Same structure, more accessor reads. Replaces seaview's two-phase `bevy_gltf` delegation (`load_gltf_handle` → `extract_gltf_meshes`), eliminating the two-phase pattern.
 
+### Current parsers
+
+| Parser | Notes |
+|---|---|
+| `parsers/stl.rs` | STL (binary + ASCII) via `stl_io`. Triangle soup, face normals. |
+| `parsers/obj.rs` | OBJ (Wavefront) via `tobj`. Indexed mesh, optional normals/UVs. |
+| `parsers/glb.rs` | glTF 2.0 binary/text via `gltf`. Multi-mesh, PBR materials. |
+| `parsers/ply.rs` | PLY (Stanford Triangle Format). Hand-rolled parser — ASCII + binary LE/BE. Positions, normals, UVs, vertex colors, n-gon fan triangulation. |
+
 ### Future parsers
 
 | Parser | Notes |
 |---|---|
 | `parsers/draco_glb.rs` | Draco-compressed GLB. Depends on `draco-rs` or similar C++ bridge. |
 | `parsers/svmesh.rs` | mmap + bytemuck zero-copy. See [mmap_loader_architecture.md](../../../docs/research/mmap_loader_architecture.md). |
+| `parsers/vtk.rs` | VTK (.vtk legacy, .vtp/.vtu XML). Unstructured grids, field data. Needs research pass. |
 
 ### The boundary
 
@@ -119,6 +130,7 @@ pub struct MeshData {
     pub positions: Vec<[f32; 3]>,
     pub normals: Option<Vec<[f32; 3]>>,
     pub uvs: Option<Vec<[f32; 2]>>,
+    pub vertex_colors: Option<Vec<[f32; 4]>>,
     pub indices: Vec<u32>,
 }
 
@@ -128,7 +140,8 @@ pub enum MeshFormat {
     Obj,
     Glb,
     Gltf,
-    // future: DracoGlb, SvMesh, Ply
+    Ply,
+    // future: DracoGlb, SvMesh, Vtk
 }
 
 /// Full asset output — geometry + materials.
@@ -188,7 +201,7 @@ See [mesh_loading_ecosystem.md](../../../docs/research/mesh_loading_ecosystem.md
 | **Cameras / lights** | ❌ | ❌ | glTF supports these. We won't. App-level concern. |
 | **Morph targets** | ❌ | 🔮 | glTF blend shapes. Relevant for animation but not sim playback. |
 | **Point clouds** | ❌ | 🔮 | Different topology. Would need `TopologyKind::PointCloud` support. |
-| **Scientific formats** (VTK, VTU, NetCDF, HDF5) | ❌ | 🔮 Research needed | Sim output formats. Unstructured grids, field data, time series. Huge ecosystem — needs its own research pass. |
+| **Scientific formats** (VTK, VTU, NetCDF, HDF5) | ❌ | 🔮 Research needed | Sim output formats. Unstructured grids, field data, time series. Huge ecosystem — needs its own research pass. VTK tracked as `loadfu-cnj`. |
 | **Volumetric / rendering** (OpenVDB, NanoVDB, USD) | ❌ | 🔮 Research needed | Not surface meshes — voxel grids, level sets, volume rendering. Different pipeline entirely (compute → texture3d or marching cubes → mesh). USD also carries scene hierarchy. |
 
 The trait boundary (`AssetData`) has room for future classes — fields get added, parsers opt in. Don't over-engineer for them now, but don't design them out either.

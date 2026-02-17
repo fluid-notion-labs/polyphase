@@ -3,7 +3,7 @@
 //! This module is gated behind `#[cfg(feature = "bevy")]` and provides:
 //!
 //! - [`LoadfuPlugin`] — registers all asset loaders with Bevy
-//! - [`StlLoader`], [`ObjLoader`], [`GlbLoader`] — thin `AssetLoader` wrappers
+//! - [`StlLoader`], [`ObjLoader`], [`GlbLoader`], [`PlyLoader`] — thin `AssetLoader` wrappers
 //!   that delegate to core parsers and convert `MeshData` → `bevy::Mesh`
 //! - `From<MeshData> for bevy::Mesh` — the conversion bridge
 //!
@@ -25,6 +25,7 @@ pub mod plugin;
 // ── Public API re-exports ─────────────────────────────────────────────
 
 pub use asset_loaders::{
-    GlbLoader, GlbLoaderSettings, ObjLoader, ObjLoaderSettings, StlLoader, StlLoaderSettings,
+    GlbLoader, GlbLoaderSettings, ObjLoader, ObjLoaderSettings, PlyLoader, PlyLoaderSettings,
+    StlLoader, StlLoaderSettings,
 };
 pub use plugin::LoadfuPlugin;
