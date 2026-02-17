@@ -15,6 +15,9 @@ gltf = { version = "1.4", features = ["import"] }
 bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 thiserror = "2"
 
+# VTK format support (optional, behind vtk feature flag)
+vtkio = { path = "../vtkio", default-features = false, features = ["xml"], optional = true }
+
 # Serialization (needed for Bevy AssetLoader settings, gated behind bevy feature)
 serde = { version = "1", features = ["derive"], optional = true }
 
@@ -28,3 +31,4 @@ bevy = { version = "0.18", default-features = false, optional = true, features =
 [features]
 default = []
 bevy = ["dep:bevy", "dep:serde"]
+vtk = ["dep:vtkio"]

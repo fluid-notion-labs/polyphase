@@ -21,6 +21,7 @@ Rules and rationale for loadfu's dependency choices. Read this before adding a c
 | `bytemuck` | 1 | No | Safe transmute for vertex data. Essential for zero-copy paths and buffer interop. |
 | `thiserror` | 2 | No | Error derive macros. Eliminates hand-rolled `Display`/`Error` impls across all error types. |
 | `bevy` | 0.18 | **Yes** (`bevy`) | Engine integration. Gated behind `bevy` feature. Only `bevy_asset`, `bevy_render`, `bevy_mesh`. |
+| `vtkio` | 0.6.3 | **Yes** (`vtk`) | VTK format parsing (legacy + XML). Vendored at `vendor/vtkio` on branch `loadfu-vendor`. Features: `xml` only (no compression). See VTK evaluation below. |
 
 ## Math Types — `[f32; 3]` vs Named Types
 
@@ -72,3 +73,44 @@ Rules and rationale for loadfu's dependency choices. Read this before adding a c
 | **strum** | Considered | Would save ~10 lines on `MeshFormat` (4 variants). Not worth a proc-macro dep at this scale. Reconsider if format count reaches 10+. |
 | **derive_more** | Considered | Overlaps with thiserror. No other boilerplate justifies it. |
 | **cfg-if** | Noted | Useful when Bevy layer lands (Epic 3). Already a transitive dep. Add explicitly if `#[cfg]` blocks get complex. |
+
+## VTK Parsing — `vtkio` vs Hand-rolling
+
+**Decision: use `vtkio`, vendored, gated behind `vtk` feature flag.**
+
+### Crates evaluated
+
+| Crate | What it does | Verdict |
+|-------|-------------|---------|
+| **vtkio** 0.6.3 (elrnv) | Full VTK I/O — legacy ASCII/binary + XML (.vtp/.vtu/.vts/.vtr/.vti). Pure Rust, 7.5K lines. Deps: nom, num-traits, num-derive, byteorder, base64, bytemuck (shared), quick-xml+serde (xml feature), compression libs (optional). 352K downloads. | ✅ **Use it.** VTK is far too complex to hand-roll. Vendored at `vendor/vtkio` on `loadfu-vendor` branch (pinned to 0.6.3). |
+| Hand-rolled | — | ❌ VTK has legacy binary (big-endian), XML with base64+compression, 30+ cell types, multi-section headers. Estimated 3,000-5,000 lines. Not viable (unlike PLY which was ~500 lines). |
+
+### Why vendored?
+
+- 0.6.3 is the last stable release (March 2021). The 0.7.0-rc1 on master uses a custom `quick-xml` git fork — not suitable for a published crate.
+- Vendoring lets us pin to a known-good state and patch if needed.
+- The `loadfu-vendor` branch is based on commit `d0cfe18` (the 0.6.3 release).
+
+### Feature configuration
+
+- `default-features = false` — strips compression (lz4, flate2, xz2) which we don't need initially.
+- `features = ["xml"]` — enables .vtp/.vtu support via `quick-xml` + `serde`.
+- `serde` comes in via xml feature (shared with bevy feature's serde — no duplicate).
+
+### Transitive deps added by `vtk` feature
+
+| Dep | Via | Notes |
+|-----|-----|-------|
+| `nom` 3 | vtkio (legacy parser) | Parser combinator framework. Older version (v3). |
+| `num-traits` + `num-derive` | vtkio | Numeric trait derives for CellType enum. Light. |
+| `byteorder` | vtkio | Endian-aware reading. Light. |
+| `base64` | vtkio | XML binary data encoding. Light. |
+| `quick-xml` 0.22 | vtkio (xml feature) | XML parser. |
+| `serde` | vtkio (xml feature) | Already present when `bevy` feature is active. |
+
+### Dependency weight
+
+Without `vtk` feature: zero impact — `vtkio` is fully optional.
+With `vtk` feature: adds ~8 transitive crates. Acceptable for the complexity saved.
+
+See `docs/architecture/vtk_research.md` for full format research and implementation plan.
