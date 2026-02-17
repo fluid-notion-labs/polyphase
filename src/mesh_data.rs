@@ -4,6 +4,8 @@
 //! and every consumer (Bevy, CLI, pipeline) reads from. It carries geometry
 //! data (positions, normals, UVs, indices) with no engine dependency.
 
+use thiserror::Error;
+
 /// Format-agnostic mesh data produced by all loadfu parsers.
 ///
 /// Every parser (`stl`, `obj`, `glb`) returns `Result<MeshData>`. Consumers
@@ -41,21 +43,25 @@ pub struct MeshData {
 }
 
 /// Errors detected by [`MeshData::validate`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum MeshDataError {
     /// `positions` is empty.
+    #[error("MeshData has no positions")]
     EmptyPositions,
 
     /// `indices` is empty.
+    #[error("MeshData has no indices")]
     EmptyIndices,
 
     /// `indices.len()` is not a multiple of 3.
+    #[error("index count {count} is not a multiple of 3 (not a valid triangle list)")]
     IndicesNotTriangleAligned {
         /// Actual index count.
         count: usize,
     },
 
     /// An index references a vertex that doesn't exist.
+    #[error("index {index} is out of bounds for {vertex_count} vertices")]
     IndexOutOfBounds {
         /// The offending index value.
         index: u32,
@@ -64,6 +70,7 @@ pub enum MeshDataError {
     },
 
     /// `normals` length doesn't match `positions` length.
+    #[error("normals length ({normals}) doesn't match positions length ({positions})")]
     NormalsLengthMismatch {
         /// Number of normals provided.
         normals: usize,
@@ -72,6 +79,7 @@ pub enum MeshDataError {
     },
 
     /// `uvs` length doesn't match `positions` length.
+    #[error("UVs length ({uvs}) doesn't match positions length ({positions})")]
     UvsLengthMismatch {
         /// Number of UV coords provided.
         uvs: usize,
@@ -79,44 +87,6 @@ pub enum MeshDataError {
         positions: usize,
     },
 }
-
-impl std::fmt::Display for MeshDataError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptyPositions => write!(f, "MeshData has no positions"),
-            Self::EmptyIndices => write!(f, "MeshData has no indices"),
-            Self::IndicesNotTriangleAligned { count } => {
-                write!(
-                    f,
-                    "index count {count} is not a multiple of 3 (not a valid triangle list)"
-                )
-            }
-            Self::IndexOutOfBounds {
-                index,
-                vertex_count,
-            } => {
-                write!(
-                    f,
-                    "index {index} is out of bounds for {vertex_count} vertices"
-                )
-            }
-            Self::NormalsLengthMismatch { normals, positions } => {
-                write!(
-                    f,
-                    "normals length ({normals}) doesn't match positions length ({positions})"
-                )
-            }
-            Self::UvsLengthMismatch { uvs, positions } => {
-                write!(
-                    f,
-                    "UVs length ({uvs}) doesn't match positions length ({positions})"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for MeshDataError {}
 
 impl MeshData {
     /// Create a new `MeshData` with only positions and indices (no normals or UVs).
