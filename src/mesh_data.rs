@@ -4,6 +4,7 @@
 //! and every consumer (Bevy, CLI, pipeline) reads from. It carries geometry
 //! data (positions, normals, UVs, indices) with no engine dependency.
 
+use crate::capabilities::TopologyKind;
 use thiserror::Error;
 
 /// Format-agnostic mesh data produced by all loadfu parsers.
@@ -20,9 +21,16 @@ use thiserror::Error;
 /// - If `normals` is `Some`, its length equals `positions.len()`.
 /// - If `uvs` is `Some`, its length equals `positions.len()`.
 /// - If `vertex_colors` is `Some`, its length equals `positions.len()`.
-/// - `indices.len()` is a multiple of 3 (triangle list).
+/// - `indices.len()` is a multiple of the topology's stride (3 for triangle
+///   list, 2 for line list, 1 for point list, or ≥ 3 for triangle strip).
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeshData {
+    /// Primitive topology of this mesh data.
+    ///
+    /// Defaults to [`TopologyKind::TriangleList`]. Parsers that produce line
+    /// or point data set this explicitly.
+    pub topology: TopologyKind,
+
     /// Vertex positions as `[x, y, z]`.
     pub positions: Vec<[f32; 3]>,
 
@@ -43,9 +51,13 @@ pub struct MeshData {
     /// (scanner output) and supported by GLB.
     pub vertex_colors: Option<Vec<[f32; 4]>>,
 
-    /// Triangle indices into the `positions` (and `normals`/`uvs`) arrays.
+    /// Indices into the `positions` (and `normals`/`uvs`) arrays.
     ///
-    /// Always a flat triangle list — length is a multiple of 3.
+    /// Interpretation depends on `topology`:
+    /// - **TriangleList:** flat triangle list — length is a multiple of 3.
+    /// - **LineList:** flat line segments — length is a multiple of 2.
+    /// - **TriangleStrip:** strip — length ≥ 3.
+    /// - **PointList:** individual points — any length ≥ 1.
     pub indices: Vec<u32>,
 }
 
@@ -60,11 +72,28 @@ pub enum MeshDataError {
     #[error("MeshData has no indices")]
     EmptyIndices,
 
-    /// `indices.len()` is not a multiple of 3.
-    #[error("index count {count} is not a multiple of 3 (not a valid triangle list)")]
-    IndicesNotTriangleAligned {
+    /// `indices.len()` is not aligned to the topology's stride.
+    #[error(
+        "index count {count} is not a multiple of {stride} (required by {topology:?} topology)"
+    )]
+    IndicesNotAligned {
         /// Actual index count.
         count: usize,
+        /// Required multiple (e.g. 3 for TriangleList, 2 for LineList).
+        stride: usize,
+        /// The topology that imposed this requirement.
+        topology: TopologyKind,
+    },
+
+    /// For strip topologies, there aren't enough indices to form a primitive.
+    #[error("index count {count} is too few for {topology:?} topology (need at least {minimum})")]
+    InsufficientIndices {
+        /// Actual index count.
+        count: usize,
+        /// Minimum required.
+        minimum: usize,
+        /// The topology that imposed this requirement.
+        topology: TopologyKind,
     },
 
     /// An index references a vertex that doesn't exist.
@@ -105,9 +134,27 @@ pub enum MeshDataError {
 }
 
 impl MeshData {
-    /// Create a new `MeshData` with only positions and indices (no normals or UVs).
+    /// Create a new `MeshData` with triangle-list topology, positions, and
+    /// indices only (no normals or UVs).
     pub fn new(positions: Vec<[f32; 3]>, indices: Vec<u32>) -> Self {
         Self {
+            topology: TopologyKind::TriangleList,
+            positions,
+            normals: None,
+            uvs: None,
+            vertex_colors: None,
+            indices,
+        }
+    }
+
+    /// Create a new `MeshData` with explicit topology.
+    pub fn with_topology(
+        topology: TopologyKind,
+        positions: Vec<[f32; 3]>,
+        indices: Vec<u32>,
+    ) -> Self {
+        Self {
+            topology,
             positions,
             normals: None,
             uvs: None,
@@ -139,11 +186,31 @@ impl MeshData {
         self.positions.len()
     }
 
+    /// Number of primitives based on the topology.
+    ///
+    /// - **TriangleList:** `indices.len() / 3`
+    /// - **TriangleStrip:** `indices.len().saturating_sub(2)`
+    /// - **LineList:** `indices.len() / 2`
+    /// - **PointList:** `indices.len()`
+    pub fn primitive_count(&self) -> usize {
+        match self.topology {
+            TopologyKind::TriangleList => self.indices.len() / 3,
+            TopologyKind::TriangleStrip => self.indices.len().saturating_sub(2),
+            TopologyKind::LineList => self.indices.len() / 2,
+            TopologyKind::PointList => self.indices.len(),
+        }
+    }
+
     /// Number of triangles (indices / 3).
     ///
-    /// Returns 0 if `indices.len()` is not a multiple of 3.
+    /// Returns 0 if the topology is not a triangle type or if
+    /// `indices.len()` is not a multiple of 3 for triangle lists.
     pub fn triangle_count(&self) -> usize {
-        self.indices.len() / 3
+        match self.topology {
+            TopologyKind::TriangleList => self.indices.len() / 3,
+            TopologyKind::TriangleStrip => self.indices.len().saturating_sub(2),
+            TopologyKind::LineList | TopologyKind::PointList => 0,
+        }
     }
 
     /// Whether this mesh carries per-vertex normals.
@@ -161,10 +228,29 @@ impl MeshData {
         self.vertex_colors.is_some()
     }
 
+    /// Whether this mesh uses triangle topology (list or strip).
+    pub fn is_triangle_topology(&self) -> bool {
+        matches!(
+            self.topology,
+            TopologyKind::TriangleList | TopologyKind::TriangleStrip
+        )
+    }
+
+    /// Whether this mesh uses line topology.
+    pub fn is_line_topology(&self) -> bool {
+        matches!(self.topology, TopologyKind::LineList)
+    }
+
+    /// Whether this mesh uses point topology.
+    pub fn is_point_topology(&self) -> bool {
+        matches!(self.topology, TopologyKind::PointList)
+    }
+
     /// Validate the mesh data, returning the first error found (if any).
     ///
     /// This is intentionally cheap — it does a single pass over indices to
-    /// check bounds, plus length comparisons for normals/UVs.
+    /// check bounds, plus length comparisons for normals/UVs. Alignment
+    /// checks are topology-aware.
     pub fn validate(&self) -> Result<(), MeshDataError> {
         if self.positions.is_empty() {
             return Err(MeshDataError::EmptyPositions);
@@ -174,10 +260,38 @@ impl MeshData {
             return Err(MeshDataError::EmptyIndices);
         }
 
-        if self.indices.len() % 3 != 0 {
-            return Err(MeshDataError::IndicesNotTriangleAligned {
-                count: self.indices.len(),
-            });
+        // Topology-specific index count validation
+        match self.topology {
+            TopologyKind::TriangleList => {
+                if self.indices.len() % 3 != 0 {
+                    return Err(MeshDataError::IndicesNotAligned {
+                        count: self.indices.len(),
+                        stride: 3,
+                        topology: self.topology,
+                    });
+                }
+            }
+            TopologyKind::LineList => {
+                if self.indices.len() % 2 != 0 {
+                    return Err(MeshDataError::IndicesNotAligned {
+                        count: self.indices.len(),
+                        stride: 2,
+                        topology: self.topology,
+                    });
+                }
+            }
+            TopologyKind::TriangleStrip => {
+                if self.indices.len() < 3 {
+                    return Err(MeshDataError::InsufficientIndices {
+                        count: self.indices.len(),
+                        minimum: 3,
+                        topology: self.topology,
+                    });
+                }
+            }
+            TopologyKind::PointList => {
+                // Any non-empty count is valid for points (already checked above).
+            }
         }
 
         let vertex_count = self.positions.len();
@@ -269,10 +383,39 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             vec![0, 1, 2],
         );
+        assert_eq!(mesh.topology, TopologyKind::TriangleList);
         assert!(!mesh.has_normals());
         assert!(!mesh.has_uvs());
         assert_eq!(mesh.vertex_count(), 3);
         assert_eq!(mesh.triangle_count(), 1);
+        assert_eq!(mesh.primitive_count(), 1);
+    }
+
+    #[test]
+    fn with_topology_creates_line_mesh() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::LineList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![0, 1],
+        );
+        assert_eq!(mesh.topology, TopologyKind::LineList);
+        assert_eq!(mesh.primitive_count(), 1);
+        assert_eq!(mesh.triangle_count(), 0);
+        assert!(mesh.is_line_topology());
+        assert!(!mesh.is_triangle_topology());
+    }
+
+    #[test]
+    fn with_topology_creates_point_mesh() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::PointList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            vec![0, 1, 2],
+        );
+        assert_eq!(mesh.topology, TopologyKind::PointList);
+        assert_eq!(mesh.primitive_count(), 3);
+        assert_eq!(mesh.triangle_count(), 0);
+        assert!(mesh.is_point_topology());
     }
 
     #[test]
@@ -288,6 +431,88 @@ mod tests {
         assert!(mesh.has_normals());
         assert!(mesh.has_uvs());
         assert!(mesh.has_vertex_colors());
+    }
+
+    // ── Topology classification ───────────────────────────────────────
+
+    #[test]
+    fn triangle_list_is_triangle_topology() {
+        let mesh = MeshData::new(
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vec![0, 1, 2],
+        );
+        assert!(mesh.is_triangle_topology());
+        assert!(!mesh.is_line_topology());
+        assert!(!mesh.is_point_topology());
+    }
+
+    #[test]
+    fn triangle_strip_is_triangle_topology() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::TriangleStrip,
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
+            vec![0, 1, 2, 3],
+        );
+        assert!(mesh.is_triangle_topology());
+        assert_eq!(mesh.triangle_count(), 2);
+        assert_eq!(mesh.primitive_count(), 2);
+    }
+
+    // ── Primitive count ───────────────────────────────────────────────
+
+    #[test]
+    fn primitive_count_triangle_list() {
+        let mesh = MeshData::new(
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
+            vec![0, 1, 2, 1, 3, 2],
+        );
+        assert_eq!(mesh.primitive_count(), 2);
+    }
+
+    #[test]
+    fn primitive_count_line_list() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::LineList,
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+            ],
+            vec![0, 1, 2, 3],
+        );
+        assert_eq!(mesh.primitive_count(), 2);
+    }
+
+    #[test]
+    fn primitive_count_point_list() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::PointList,
+            vec![[0.0, 0.0, 0.0]; 5],
+            vec![0, 1, 2, 3, 4],
+        );
+        assert_eq!(mesh.primitive_count(), 5);
+    }
+
+    #[test]
+    fn primitive_count_triangle_strip() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::TriangleStrip,
+            vec![[0.0, 0.0, 0.0]; 5],
+            vec![0, 1, 2, 3, 4],
+        );
+        // 5 indices → 3 triangles in a strip
+        assert_eq!(mesh.primitive_count(), 3);
     }
 
     // ── Validation: valid cases ───────────────────────────────────────
@@ -322,6 +547,41 @@ mod tests {
     }
 
     #[test]
+    fn valid_line_list() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::LineList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![0, 1],
+        );
+        assert!(mesh.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_point_list() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::PointList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![0, 1],
+        );
+        assert!(mesh.validate().is_ok());
+    }
+
+    #[test]
+    fn valid_triangle_strip() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::TriangleStrip,
+            vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
+            vec![0, 1, 2, 3],
+        );
+        assert!(mesh.validate().is_ok());
+    }
+
+    #[test]
     fn validated_returns_self() {
         let mesh = sample_triangle();
         let result = mesh.clone().validated();
@@ -344,14 +604,52 @@ mod tests {
     }
 
     #[test]
-    fn indices_not_aligned() {
+    fn triangle_list_indices_not_aligned() {
         let mesh = MeshData::new(
             vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             vec![0, 1], // only 2 indices
         );
         assert_eq!(
             mesh.validate(),
-            Err(MeshDataError::IndicesNotTriangleAligned { count: 2 })
+            Err(MeshDataError::IndicesNotAligned {
+                count: 2,
+                stride: 3,
+                topology: TopologyKind::TriangleList,
+            })
+        );
+    }
+
+    #[test]
+    fn line_list_indices_not_aligned() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::LineList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            vec![0, 1, 2], // 3 indices, not a multiple of 2
+        );
+        assert_eq!(
+            mesh.validate(),
+            Err(MeshDataError::IndicesNotAligned {
+                count: 3,
+                stride: 2,
+                topology: TopologyKind::LineList,
+            })
+        );
+    }
+
+    #[test]
+    fn triangle_strip_insufficient_indices() {
+        let mesh = MeshData::with_topology(
+            TopologyKind::TriangleStrip,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![0, 1], // only 2 indices, need at least 3
+        );
+        assert_eq!(
+            mesh.validate(),
+            Err(MeshDataError::InsufficientIndices {
+                count: 2,
+                minimum: 3,
+                topology: TopologyKind::TriangleStrip,
+            })
         );
     }
 
@@ -430,6 +728,7 @@ mod tests {
     #[test]
     fn estimated_memory_full() {
         let mesh = MeshData {
+            topology: TopologyKind::TriangleList,
             positions: vec![[0.0; 3]; 100],
             normals: Some(vec![[0.0; 3]; 100]),
             uvs: Some(vec![[0.0; 2]; 100]),
@@ -447,6 +746,7 @@ mod tests {
     #[test]
     fn estimated_memory_with_vertex_colors() {
         let mesh = MeshData {
+            topology: TopologyKind::TriangleList,
             positions: vec![[0.0; 3]; 100],
             normals: None,
             uvs: None,
@@ -471,5 +771,31 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("42"));
         assert!(msg.contains("10"));
+    }
+
+    #[test]
+    fn error_display_indices_not_aligned() {
+        let err = MeshDataError::IndicesNotAligned {
+            count: 5,
+            stride: 3,
+            topology: TopologyKind::TriangleList,
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("5"));
+        assert!(msg.contains("3"));
+        assert!(msg.contains("TriangleList"));
+    }
+
+    #[test]
+    fn error_display_insufficient_indices() {
+        let err = MeshDataError::InsufficientIndices {
+            count: 2,
+            minimum: 3,
+            topology: TopologyKind::TriangleStrip,
+        };
+        let msg = format!("{err}");
+        assert!(msg.contains("2"));
+        assert!(msg.contains("3"));
+        assert!(msg.contains("TriangleStrip"));
     }
 }

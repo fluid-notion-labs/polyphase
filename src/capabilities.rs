@@ -188,9 +188,20 @@ impl AssetData {
         self.meshes.iter().map(|m| m.positions.len()).sum()
     }
 
-    /// Total triangle count across all meshes (assumes triangle list topology).
+    /// Total triangle count across all meshes.
+    ///
+    /// Only counts meshes with triangle topology (list or strip).
+    /// Line and point meshes contribute zero.
     pub fn total_triangles(&self) -> usize {
-        self.meshes.iter().map(|m| m.indices.len() / 3).sum()
+        self.meshes.iter().map(|m| m.triangle_count()).sum()
+    }
+
+    /// Total primitive count across all meshes (topology-aware).
+    ///
+    /// Triangles, line segments, and points are all counted according to
+    /// their respective topology.
+    pub fn total_primitives(&self) -> usize {
+        self.meshes.iter().map(|m| m.primitive_count()).sum()
     }
 
     /// Post-parse capabilities derived from the actual loaded data.
@@ -220,8 +231,12 @@ impl AssetData {
             })
             .sum();
 
+        // Determine the primary topology — use the first mesh's topology,
+        // or default to TriangleList if there are no meshes.
+        let topology = self.meshes.first().map(|m| m.topology).unwrap_or_default();
+
         AssetCapabilities {
-            topology: TopologyKind::TriangleList,
+            topology,
             has_normals,
             has_uvs,
             has_vertex_colors,

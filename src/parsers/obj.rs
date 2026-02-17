@@ -175,6 +175,7 @@ fn build_merged_mesh(
     let uvs = if has_uvs { Some(uvs_buf) } else { None };
 
     Ok(MeshData {
+        topology: crate::capabilities::TopologyKind::TriangleList,
         positions,
         normals,
         uvs,

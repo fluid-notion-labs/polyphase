@@ -113,6 +113,7 @@ pub fn parse_with_options(bytes: &[u8], options: &PlyOptions) -> Result<MeshData
     };
 
     Ok(MeshData {
+        topology: crate::capabilities::TopologyKind::TriangleList,
         positions: raw.positions,
         normals,
         uvs,

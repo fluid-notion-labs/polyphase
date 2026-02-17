@@ -70,6 +70,7 @@ pub(crate) mod test_util {
     /// A minimal valid triangle — positions, normals, UVs, 3 indices.
     pub fn sample_triangle() -> MeshData {
         MeshData {
+            topology: crate::TopologyKind::TriangleList,
             positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
             uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),

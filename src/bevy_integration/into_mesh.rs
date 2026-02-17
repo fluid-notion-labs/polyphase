@@ -7,12 +7,23 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
 
+use crate::capabilities::TopologyKind;
 use crate::MeshData;
+
+/// Map loadfu's [`TopologyKind`] to Bevy's [`PrimitiveTopology`].
+fn to_bevy_topology(kind: TopologyKind) -> PrimitiveTopology {
+    match kind {
+        TopologyKind::TriangleList => PrimitiveTopology::TriangleList,
+        TopologyKind::TriangleStrip => PrimitiveTopology::TriangleStrip,
+        TopologyKind::LineList => PrimitiveTopology::LineList,
+        TopologyKind::PointList => PrimitiveTopology::PointList,
+    }
+}
 
 impl From<MeshData> for Mesh {
     fn from(data: MeshData) -> Self {
         let mut mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
+            to_bevy_topology(data.topology),
             RenderAssetUsages::MAIN_WORLD,
         );
 
@@ -49,6 +60,38 @@ mod tests {
     use crate::test_util::{sample_triangle, sample_triangle_bare};
     use crate::MeshData;
     use bevy::mesh::VertexAttributeValues;
+
+    #[test]
+    fn topology_mapping_triangle_list() {
+        assert_eq!(
+            to_bevy_topology(TopologyKind::TriangleList),
+            PrimitiveTopology::TriangleList
+        );
+    }
+
+    #[test]
+    fn topology_mapping_triangle_strip() {
+        assert_eq!(
+            to_bevy_topology(TopologyKind::TriangleStrip),
+            PrimitiveTopology::TriangleStrip
+        );
+    }
+
+    #[test]
+    fn topology_mapping_line_list() {
+        assert_eq!(
+            to_bevy_topology(TopologyKind::LineList),
+            PrimitiveTopology::LineList
+        );
+    }
+
+    #[test]
+    fn topology_mapping_point_list() {
+        assert_eq!(
+            to_bevy_topology(TopologyKind::PointList),
+            PrimitiveTopology::PointList
+        );
+    }
 
     #[test]
     fn full_triangle_converts() {
@@ -155,5 +198,31 @@ mod tests {
         let bevy_mesh: Mesh = mesh_data.into();
 
         assert_eq!(bevy_mesh.asset_usage, RenderAssetUsages::MAIN_WORLD);
+    }
+
+    #[test]
+    fn line_list_converts_with_correct_topology() {
+        let mesh_data = MeshData::with_topology(
+            TopologyKind::LineList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            vec![0, 1],
+        );
+        let bevy_mesh: Mesh = mesh_data.into();
+
+        assert_eq!(bevy_mesh.primitive_topology(), PrimitiveTopology::LineList);
+        assert!(bevy_mesh.attribute(Mesh::ATTRIBUTE_POSITION).is_some());
+        assert!(bevy_mesh.indices().is_some());
+    }
+
+    #[test]
+    fn point_list_converts_with_correct_topology() {
+        let mesh_data = MeshData::with_topology(
+            TopologyKind::PointList,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            vec![0, 1, 2],
+        );
+        let bevy_mesh: Mesh = mesh_data.into();
+
+        assert_eq!(bevy_mesh.primitive_topology(), PrimitiveTopology::PointList);
     }
 }

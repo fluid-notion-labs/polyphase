@@ -128,6 +128,7 @@ fn extract_primitive(
     };
 
     Ok(MeshData {
+        topology: crate::capabilities::TopologyKind::TriangleList,
         positions,
         normals,
         uvs,
@@ -348,6 +349,7 @@ fn merge_meshes(meshes: Vec<MeshData>) -> MeshData {
     }
 
     MeshData {
+        topology: crate::capabilities::TopologyKind::TriangleList,
         positions,
         normals,
         uvs,

@@ -114,6 +114,7 @@ fn build_mesh_with_stl_normals(stl: &stl_io::IndexedMesh) -> MeshData {
         .collect();
 
     MeshData {
+        topology: crate::capabilities::TopologyKind::TriangleList,
         positions,
         normals: Some(normals),
         uvs: None,
@@ -140,6 +141,7 @@ fn build_mesh_auto_normals(stl: &stl_io::IndexedMesh) -> MeshData {
     let normals = compute_smooth_normals(&positions, &indices);
 
     MeshData {
+        topology: crate::capabilities::TopologyKind::TriangleList,
         positions,
         normals: Some(normals),
         uvs: None,
