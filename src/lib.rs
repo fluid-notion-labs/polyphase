@@ -43,6 +43,6 @@ pub mod parsers;
 // ── Public API re-exports ─────────────────────────────────────────────
 
 pub use capabilities::{AssetCapabilities, AssetData, MaterialData, ParseCost, TopologyKind};
-pub use error::LoadError;
+pub use error::{GlbError, LoadError, ObjError, StlError};
 pub use format::MeshFormat;
-pub use mesh_data::MeshData;
+pub use mesh_data::{MeshData, MeshDataError};

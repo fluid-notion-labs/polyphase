@@ -3,6 +3,7 @@
 //! Each format has its own error type wrapping the underlying parsing library's
 //! errors. [`LoadError`] is the top-level enum that unifies them all.
 
+use crate::mesh_data::MeshDataError;
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,10 @@ pub enum LoadError {
     #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
 
+    /// Mesh data failed validation after parsing.
+    #[error("validation: {0}")]
+    Validation(#[from] MeshDataError),
+
     /// Generic I/O error not tied to a specific format.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -100,14 +105,6 @@ pub enum LoadError {
 // Convenience conversions
 // ---------------------------------------------------------------------------
 
-/// Allow `stl_io::Error` (which is just `std::io::Error`) to convert into
-/// `StlError` via the `Io` variant — already handled by `#[from]` above
-/// since `stl_io` returns `std::io::Error`.
-
-// ---------------------------------------------------------------------------
-// Display helpers (for contexts where you want format name + message)
-// ---------------------------------------------------------------------------
-
 impl LoadError {
     /// Returns the format name associated with this error, if known.
     pub fn format_name(&self) -> Option<&'static str> {
@@ -115,7 +112,7 @@ impl LoadError {
             Self::Stl(_) => Some("STL"),
             Self::Obj(_) => Some("OBJ"),
             Self::Glb(_) => Some("GLB"),
-            Self::UnsupportedFormat(_) | Self::Io(_) => None,
+            Self::Validation(_) | Self::UnsupportedFormat(_) | Self::Io(_) => None,
         }
     }
 }
@@ -189,5 +186,14 @@ mod tests {
         let err = LoadError::Io(io_err);
         assert_eq!(err.format_name(), None);
         assert!(err.to_string().contains("file not found"));
+    }
+
+    #[test]
+    fn load_error_from_validation() {
+        let v_err = MeshDataError::EmptyPositions;
+        let err = LoadError::from(v_err);
+        assert!(matches!(err, LoadError::Validation(_)));
+        assert_eq!(err.format_name(), None);
+        assert!(err.to_string().contains("no positions"));
     }
 }
