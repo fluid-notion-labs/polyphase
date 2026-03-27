@@ -152,7 +152,7 @@ impl Default for GlbLoaderSettings {
     }
 }
 
-/// Bevy [`AssetLoader`] for `.glb` and `.gltf` files.
+/// Bevy [`AssetLoader`] for `.glb` (binary glTF) files.
 ///
 /// Delegates to [`parsers::glb::parse`](crate::parsers::glb::parse) and
 /// converts the resulting [`MeshData`](crate::MeshData) into Bevy [`Mesh`]
@@ -160,6 +160,11 @@ impl Default for GlbLoaderSettings {
 ///
 /// By default, all mesh primitives are merged into a single mesh. Set
 /// `merge: false` in settings to get individual sub-assets.
+///
+/// **Note:** This loader handles `.glb` only (self-contained binary).
+/// Multi-file `.gltf` (with external `.bin` buffers and texture references)
+/// must go through Bevy's native `GltfLoader` which can resolve external
+/// URIs.  loadfu's byte-slice parser cannot resolve external references.
 #[derive(Default, Debug, Clone, Copy, bevy::reflect::TypePath)]
 pub struct GlbLoader;
 
@@ -202,7 +207,7 @@ impl AssetLoader for GlbLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["glb", "gltf"]
+        &["glb"]
     }
 }
 
@@ -297,7 +302,7 @@ mod tests {
     #[test]
     fn glb_loader_extensions() {
         let loader = GlbLoader;
-        assert_eq!(loader.extensions(), &["glb", "gltf"]);
+        assert_eq!(loader.extensions(), &["glb"]);
     }
 
     // ── PLY ───────────────────────────────────────────────────────────
