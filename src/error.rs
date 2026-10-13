@@ -84,6 +84,30 @@ pub enum GlbError {
     /// A mesh primitive used an unsupported topology (not triangles).
     #[error("GLB mesh primitive has unsupported topology: {0}")]
     UnsupportedTopology(String),
+
+    /// The glTF JSON references external files (buffers or images with URIs
+    /// that are not data URIs). Core parsers are pure — they cannot touch
+    /// the filesystem.
+    #[error(
+        "glTF references external files ({what}); use GLB, or the Bevy loader which can resolve sibling files"
+    )]
+    ExternalReferences {
+        /// Human-readable description of what was external (e.g. the URI).
+        what: String,
+    },
+
+    /// A glTF image used a MIME type this parser cannot tag (only PNG and
+    /// JPEG are supported).
+    #[error("glTF image uses unsupported MIME type: {0}")]
+    UnsupportedImageMime(String),
+
+    /// A data URI was malformed (missing payload or undecodable base64).
+    #[error("glTF malformed data URI: {0}")]
+    DataUri(String),
+
+    /// A buffer view referenced data outside its buffer.
+    #[error("glTF buffer view is out of bounds")]
+    InvalidBufferView,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,9 +136,13 @@ pub enum LoadError {
     #[error("PLY: {0}")]
     Ply(#[from] PlyError),
 
-    /// The file extension was not recognised or the format is unsupported.
-    #[error("unsupported format: {0}")]
-    UnsupportedFormat(String),
+    /// The format could not be recognised, or was recognised but is not
+    /// supported by this build (e.g. VTK without the `vtk` feature).
+    #[error("unsupported format{}", .detected.map(|f| format!(": {f}")).unwrap_or_default())]
+    UnsupportedFormat {
+        /// The format that was detected, if any.
+        detected: Option<crate::MeshFormat>,
+    },
 
     /// Mesh data failed validation after parsing.
     #[error("validation: {0}")]
@@ -137,7 +165,9 @@ impl LoadError {
             Self::Obj(_) => Some("OBJ"),
             Self::Glb(_) => Some("GLB"),
             Self::Ply(_) => Some("PLY"),
-            Self::Validation(_) | Self::UnsupportedFormat(_) | Self::Io(_) => None,
+            Self::Validation(_)
+            | Self::UnsupportedFormat { .. }
+            | Self::Io(_) => None,
         }
     }
 }
@@ -220,9 +250,14 @@ mod tests {
 
     #[test]
     fn load_error_unsupported_format() {
-        let err = LoadError::UnsupportedFormat("fbx".into());
-        assert_eq!(err.to_string(), "unsupported format: fbx");
+        let err = LoadError::UnsupportedFormat { detected: None };
+        assert_eq!(err.to_string(), "unsupported format");
         assert_eq!(err.format_name(), None);
+
+        let err = LoadError::UnsupportedFormat {
+            detected: Some(crate::MeshFormat::Glb),
+        };
+        assert_eq!(err.to_string(), "unsupported format: GLB");
     }
 
     #[test]

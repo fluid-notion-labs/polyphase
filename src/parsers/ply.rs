@@ -119,6 +119,7 @@ pub fn parse_with_options(bytes: &[u8], options: &PlyOptions) -> Result<MeshData
         uvs,
         vertex_colors,
         indices,
+        material_index: None,
     })
 }
 

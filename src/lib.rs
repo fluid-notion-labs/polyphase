@@ -41,12 +41,65 @@ pub mod parsers;
 #[cfg(feature = "bevy")]
 pub mod bevy_integration;
 
+// ── Top-level dispatch ────────────────────────────────────────────────
+
+/// Parse bytes of a known format into a full [`AssetData`] — meshes,
+/// materials, textures, and (where the format has one) a node hierarchy.
+///
+/// Free functions, not a `Parser` trait: a handful of formats with
+/// heterogeneous options don't earn one.
+///
+/// # Errors
+///
+/// Returns the per-format error wrapped in [`LoadError`], or
+/// [`LoadError::UnsupportedFormat`] if the format is known but has no
+/// parser compiled in.
+pub fn parse_asset(bytes: &[u8], format: MeshFormat) -> Result<AssetData, LoadError> {
+    match format {
+        MeshFormat::Stl => {
+            let mesh = parsers::stl::parse(bytes)?;
+            Ok(AssetData::single(mesh))
+        }
+        MeshFormat::Obj => {
+            Ok(parsers::obj::parse_asset(bytes, &parsers::obj::ObjOptions::default())?)
+        }
+        MeshFormat::Gltf | MeshFormat::Glb => Ok(parsers::glb::parse_asset(bytes)?),
+        MeshFormat::Ply => {
+            let mesh = parsers::ply::parse(bytes)?;
+            Ok(AssetData::single(mesh))
+        }
+    }
+}
+
+/// One-call load: detect the format from the path hint (extension),
+/// falling back to content sniffing, then [`parse_asset`].
+///
+/// The hint is just a filename used for its extension — nothing is read
+/// from disk. Without a hint (or with an unrecognised extension),
+/// [`MeshFormat::sniff`] inspects the bytes themselves.
+///
+/// # Errors
+///
+/// Returns [`LoadError::UnsupportedFormat`] if neither hint nor sniffing
+/// identifies a supported format.
+pub fn load(bytes: &[u8], hint: Option<&std::path::Path>) -> Result<AssetData, LoadError> {
+    let format = hint
+        .and_then(MeshFormat::from_path)
+        .or_else(|| MeshFormat::sniff(bytes))
+        .ok_or(LoadError::UnsupportedFormat { detected: None })?;
+    parse_asset(bytes, format)
+}
+
 // ── Public API re-exports ─────────────────────────────────────────────
 
-pub use capabilities::{AssetCapabilities, AssetData, MaterialData, ParseCost, TopologyKind};
+pub use capabilities::{
+    AlphaMode, AssetCapabilities, AssetData, MaterialData, NodeData, ParseCost, TextureData,
+    TextureMime, TextureSource, TopologyKind,
+};
 pub use error::{GlbError, LoadError, ObjError, PlyError, StlError};
 pub use format::MeshFormat;
 pub use mesh_data::{MeshData, MeshDataError};
+pub use parsers::{glb, obj, ply, stl};
 
 // ── Bevy integration re-exports ───────────────────────────────────────
 
@@ -76,6 +129,7 @@ pub(crate) mod test_util {
             uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
             vertex_colors: None,
             indices: vec![0, 1, 2],
+            material_index: None,
         }
     }
 

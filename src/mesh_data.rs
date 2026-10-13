@@ -59,6 +59,12 @@ pub struct MeshData {
     /// - **TriangleStrip:** strip — length ≥ 3.
     /// - **PointList:** individual points — any length ≥ 1.
     pub indices: Vec<u32>,
+
+    /// Material index into [`AssetData::materials`](crate::AssetData::materials),
+    /// when the format binds materials per-primitive/per-object (GLB, OBJ+MTL).
+    ///
+    /// `None` for geometry-only formats (STL, PLY) or unbound primitives.
+    pub material_index: Option<usize>,
 }
 
 /// Errors detected by [`MeshData::validate`].
@@ -144,6 +150,7 @@ impl MeshData {
             uvs: None,
             vertex_colors: None,
             indices,
+            material_index: None,
         }
     }
 
@@ -160,6 +167,7 @@ impl MeshData {
             uvs: None,
             vertex_colors: None,
             indices,
+            material_index: None,
         }
     }
 
@@ -389,6 +397,7 @@ mod tests {
         assert_eq!(mesh.vertex_count(), 3);
         assert_eq!(mesh.triangle_count(), 1);
         assert_eq!(mesh.primitive_count(), 1);
+        assert_eq!(mesh.material_index, None);
     }
 
     #[test]
@@ -734,6 +743,7 @@ mod tests {
             uvs: Some(vec![[0.0; 2]; 100]),
             vertex_colors: None,
             indices: vec![0; 300],
+            material_index: None,
         };
         // positions: 100 * 12 = 1200
         // normals:   100 * 12 = 1200
@@ -752,6 +762,7 @@ mod tests {
             uvs: None,
             vertex_colors: Some(vec![[1.0; 4]; 100]),
             indices: vec![0; 300],
+            material_index: None,
         };
         // positions: 100 * 12 = 1200
         // colors:    100 * 16 = 1600

@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 # Core parsing dependencies (always available)
 stl_io = "0.8"
 tobj = { version = "4.0", default-features = false }
+base64 = "0.22"
 gltf = { version = "1.4", features = ["import"] }
 bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 thiserror = "2"

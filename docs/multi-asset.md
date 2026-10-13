@@ -41,6 +41,13 @@ Each step is independently committable and keeps the suite green.
 After every step: `cargo check -p loadfu`, `cargo check -p loadfu --features bevy`,
 `cargo nextest run -p loadfu --features bevy`.
 
+> **Status (2026-10):** Steps 1–4 are implemented on `main` — `AlphaMode`/
+> `TextureData`/`NodeData`, `MaterialData` extension, `MeshData::material_index`,
+> `glb::parse_asset`, `obj::parse_asset` (with in-memory MTL), `MeshFormat::sniff`,
+> `loadfu::parse_asset`/`load`. Step 5 (Bevy layer) and Step 6 are still open.
+> New fixtures: `cube_textured.glb`, `cube_hierarchy.glb`, `cube_lines.glb`,
+> `gltf_external.gltf`, `two_objects.mtl`, `two_objects_textured.obj`.
+
 ### Step 1 — Core types (additive, no parser changes yet)
 
 **`capabilities.rs`** — add:

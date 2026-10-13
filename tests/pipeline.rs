@@ -115,7 +115,7 @@ fn glb_cube_full_pipeline() {
     // Multi-mesh AssetData
     let data = AssetData {
         meshes,
-        materials: Vec::new(),
+        ..Default::default()
     };
     let cap = data.capabilities();
 
@@ -365,6 +365,102 @@ fn glb_cube_memory_is_reasonable() {
     // Should be in the hundreds of bytes, not kilobytes
     assert!(mem > 100, "cube memory too small: {mem}");
     assert!(mem < 4096, "cube memory too large: {mem}");
+}
+
+// ── Top-level dispatch: parse_asset / load ───────────────────────────
+
+#[test]
+fn parse_asset_dispatches_all_formats() {
+    let cases = [
+        ("triangle.stl", MeshFormat::Stl),
+        ("triangle.obj", MeshFormat::Obj),
+        ("triangle.ply", MeshFormat::Ply),
+        ("cube.glb", MeshFormat::Glb),
+    ];
+
+    for (name, format) in cases {
+        let asset = loadfu::parse_asset(&fixture(name), format)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(!asset.meshes.is_empty(), "{name}: no meshes");
+        for mesh in &asset.meshes {
+            mesh.validate().unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+        assert!(asset.capabilities().estimated_memory.is_some());
+    }
+}
+
+#[test]
+fn load_with_extension_hint() {
+    let data = loadfu::load(&fixture("cube.glb"), Some(Path::new("scene.glb"))).unwrap();
+    assert_eq!(data.meshes.len(), 1);
+    assert!(data.meshes[0].validate().is_ok());
+}
+
+#[test]
+fn load_sniffs_when_no_hint() {
+    for name in ["triangle.stl", "triangle.obj", "triangle.ply", "cube.glb"] {
+        let asset = loadfu::load(&fixture(name), None)
+            .unwrap_or_else(|e| panic!("sniff {name}: {e}"));
+        assert!(!asset.meshes.is_empty(), "sniff {name}: no meshes");
+    }
+}
+
+#[test]
+fn load_unrecognized_bytes_error() {
+    let err = loadfu::load(b"{}", Some(Path::new("thing.gltf"))).unwrap_err();
+    assert!(matches!(err, loadfu::LoadError::Glb(_)), "glTF text with no data: {err}");
+
+    let err = loadfu::load(b"not a mesh at all", None).unwrap_err();
+    assert!(
+        matches!(err, loadfu::LoadError::UnsupportedFormat { detected: None }),
+        "got {err}"
+    );
+}
+
+#[test]
+fn glb_parse_asset_full_pipeline() {
+    let asset = loadfu::parse_asset(&fixture("cube_textured.glb"), MeshFormat::Glb).unwrap();
+
+    // Round-trip: validate every mesh, then derive capabilities.
+    for mesh in &asset.meshes {
+        mesh.validate().unwrap();
+    }
+    let cap = asset.capabilities();
+    assert!(cap.has_materials);
+    assert!(cap.has_textures);
+    assert!(cap.multi_object); // two primitives
+
+    // Materials and meshes are linked.
+    assert_eq!(asset.materials.len(), 2);
+    assert_eq!(asset.meshes[0].material_index, Some(0));
+    assert_eq!(asset.meshes[1].material_index, Some(1));
+}
+
+#[test]
+fn obj_parse_asset_full_pipeline() {
+    use loadfu::parsers::obj::ObjOptions;
+
+    let options = ObjOptions {
+        mtl: Some(fixture("two_objects.mtl")),
+        ..Default::default()
+    };
+    let asset = loadfu::parsers::obj::parse_asset(&fixture("two_objects_textured.obj"), &options)
+        .unwrap();
+
+    for mesh in &asset.meshes {
+        mesh.validate().unwrap();
+    }
+    let cap = asset.capabilities();
+    assert!(cap.multi_object);
+    assert!(cap.has_materials);
+    assert!(cap.has_textures);
+
+    assert_eq!(asset.meshes[0].material_index, Some(0));
+    assert_eq!(asset.meshes[1].material_index, Some(1));
+    assert!(matches!(
+        asset.textures[0].source,
+        loadfu::TextureSource::Uri(_)
+    ));
 }
 
 // ── Helpers (internal) ────────────────────────────────────────────────

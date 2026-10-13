@@ -4,12 +4,21 @@
 //! `tobj` crate. Produces indexed [`MeshData`] with positions, normals, and
 //! optionally UVs.
 //!
-//! Multi-object OBJ files are merged into a single [`MeshData`] with index
-//! offsets applied. MTL files are ignored — this is geometry only.
+//! Two entry points:
+//!
+//! - [`parse`] / [`parse_with_options`] — geometry only, all objects merged
+//!   into one [`MeshData`] (the historical behavior).
+//! - [`parse_asset`] — one [`MeshData`] per OBJ object, plus materials and
+//!   texture references parsed from an in-memory MTL companion (`ObjOptions::mtl`).
+//!   Core never touches the filesystem: MTL bytes must be supplied by the
+//!   caller, and texture references stay as [`TextureSource::Uri`] paths.
 //!
 //! Extracted from seaview's `asset_loaders/obj_loader.rs`, with all Bevy
 //! types replaced by [`MeshData`].
 
+use crate::capabilities::{
+    AlphaMode, AssetData, MaterialData, TextureData, TextureSource,
+};
 use crate::error::ObjError;
 use crate::mesh_data::MeshData;
 use crate::parsers::stl::compute_smooth_normals;
@@ -32,13 +41,24 @@ pub struct ObjOptions {
     ///
     /// Defaults to `true` since downstream consumers expect triangle lists.
     pub triangulate: bool,
+
+    /// Contents of a companion MTL file, parsed for materials and texture
+    /// references by [`parse_asset`].
+    ///
+    /// Core is pure — it never resolves the OBJ's `mtllib` path itself. The
+    /// caller is responsible for locating and reading the MTL file (or not).
+    /// Only used by [`parse_asset`]; geometry-only parsing ignores it.
+    pub mtl: Option<Vec<u8>>,
 }
 
+// Manual impl: `Default` derive would leave `triangulate: false`, but
+// downstream consumers expect triangle lists.
 impl Default for ObjOptions {
     fn default() -> Self {
         Self {
             recompute_normals: false,
             triangulate: true,
+            mtl: None,
         }
     }
 }
@@ -64,6 +84,25 @@ pub fn parse(bytes: &[u8]) -> Result<MeshData, ObjError> {
 ///
 /// See [`ObjOptions`] for available settings.
 pub fn parse_with_options(bytes: &[u8], options: &ObjOptions) -> Result<MeshData, ObjError> {
+    parse_asset(bytes, options).and_then(merge_asset_meshes)
+}
+
+/// Parse an OBJ file into a full [`AssetData`] — one [`MeshData`] per OBJ
+/// object, plus materials and texture references from the in-memory MTL
+/// companion ([`ObjOptions::mtl`]).
+///
+/// Mappings:
+///
+/// - `Kd` → `base_color` RGB (passed through as-is; MTL colors are usually
+///   sRGB — conversion is the consumer's job).
+/// - `d` (dissolve, tobj normalizes `Tr` to it) → `base_color` alpha.
+///   Absent → opaque (1.0).
+/// - `map_Kd` → [`TextureSource::Uri`] texture; the material's
+///   `base_color_texture` is the index into [`AssetData::textures`]. Core
+///   never resolves the URI.
+///
+/// [`MeshData::material_index`] is bound per object via `usemtl`.
+pub fn parse_asset(bytes: &[u8], options: &ObjOptions) -> Result<AssetData, ObjError> {
     let mut cursor = Cursor::new(bytes);
 
     let load_options = tobj::LoadOptions {
@@ -72,16 +111,121 @@ pub fn parse_with_options(bytes: &[u8], options: &ObjOptions) -> Result<MeshData
         ..Default::default()
     };
 
-    // Load without MTL file — we produce geometry only.
-    let (models, _materials) = tobj::load_obj_buf(&mut cursor, &load_options, |_mtl_path| {
-        tobj::MTLLoadResult::Ok((Vec::new(), Default::default()))
+    let mtl_bytes = options.mtl.as_deref();
+    let (models, materials) = tobj::load_obj_buf(&mut cursor, &load_options, |_mtl_path| {
+        // Core purity: we never read the mllib path from disk — only the
+        // MTL bytes the caller supplied, regardless of which mtllib was named.
+        match mtl_bytes {
+            Some(bytes) => tobj::load_mtl_buf(&mut Cursor::new(bytes)),
+            None => tobj::MTLLoadResult::Ok((Vec::new(), Default::default())),
+        }
     })?;
+    // In tobj 4.0, MTL errors surface separately from OBJ errors.
+    let materials = materials?;
 
     if models.is_empty() {
         return Err(ObjError::EmptyFile);
     }
 
-    build_merged_mesh(&models, options.recompute_normals)
+    let mut textures = Vec::new();
+    let mut material_data = Vec::with_capacity(materials.len());
+    for material in &materials {
+        let mut base_color = material
+            .diffuse
+            .map(|kd| [kd[0], kd[1], kd[2], 1.0])
+            .unwrap_or([1.0, 1.0, 1.0, 1.0]);
+        if let Some(dissolve) = material.dissolve {
+            base_color[3] = dissolve;
+        }
+
+        let base_color_texture = material.diffuse_texture.as_ref().map(|path| {
+            // De-duplication is not attempted — one texture entry per
+            // material reference keeps indices trivial to compute.
+            let index = textures.len();
+            textures.push(TextureData {
+                source: TextureSource::Uri(path.clone()),
+                name: Some(material.name.clone()),
+            });
+            index
+        });
+
+        material_data.push(MaterialData {
+            name: Some(material.name.clone()),
+            base_color,
+            alpha_mode: if base_color[3] < 1.0 {
+                AlphaMode::Blend
+            } else {
+                AlphaMode::Opaque
+            },
+            has_textures: base_color_texture.is_some(),
+            base_color_texture,
+            ..Default::default()
+        });
+    }
+
+    let mut meshes = Vec::new();
+    for model in &models {
+        if model.mesh.positions.is_empty() {
+            continue;
+        }
+        let mut mesh = build_merged_mesh(std::slice::from_ref(model), options.recompute_normals)?;
+        mesh.material_index = model.mesh.material_id;
+        meshes.push(mesh);
+    }
+
+    if meshes.is_empty() {
+        return Err(ObjError::EmptyMesh);
+    }
+
+    Ok(AssetData {
+        meshes,
+        materials: material_data,
+        textures,
+        ..Default::default()
+    })
+}
+
+/// Merge an asset's meshes into one, for the geometry-only entry points.
+fn merge_asset_meshes(asset: AssetData) -> Result<MeshData, ObjError> {
+    let mut meshes = asset.meshes.into_iter();
+    let first = meshes.next().ok_or(ObjError::EmptyMesh)?;
+    Ok(meshes.fold(first, merge_two_meshes))
+}
+
+/// Merge two [`MeshData`], offsetting the second's indices.
+fn merge_two_meshes(mut a: MeshData, b: MeshData) -> MeshData {
+    let offset = a.positions.len() as u32;
+    let has_normals = a.normals.is_some() || b.normals.is_some();
+    let has_uvs = a.uvs.is_some() || b.uvs.is_some();
+    let has_colors = a.vertex_colors.is_some() || b.vertex_colors.is_some();
+
+    if has_normals {
+        let fill = b
+            .normals
+            .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; b.positions.len()]);
+        a.normals
+            .get_or_insert_with(|| vec![[0.0, 1.0, 0.0]; a.positions.len()])
+            .extend(fill);
+    }
+    if has_uvs {
+        let fill = b.uvs.unwrap_or_else(|| vec![[0.0, 0.0]; b.positions.len()]);
+        a.uvs
+            .get_or_insert_with(|| vec![[0.0, 0.0]; a.positions.len()])
+            .extend(fill);
+    }
+    if has_colors {
+        let fill = b
+            .vertex_colors
+            .unwrap_or_else(|| vec![[1.0, 1.0, 1.0, 1.0]; b.positions.len()]);
+        a.vertex_colors
+            .get_or_insert_with(|| vec![[1.0, 1.0, 1.0, 1.0]; a.positions.len()])
+            .extend(fill);
+    }
+
+    a.positions.extend(b.positions);
+    a.indices.extend(b.indices.into_iter().map(|i| i + offset));
+
+    a
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +325,7 @@ fn build_merged_mesh(
         uvs,
         vertex_colors: None,
         indices,
+        material_index: None,
     })
 }
 
@@ -267,6 +412,82 @@ mod tests {
         for n in normals {
             assert!((n[2] - 1.0).abs() < 0.01, "expected Z≈1.0, got {n:?}");
         }
+    }
+
+    // ── parse_asset: multi-object ─────────────────────────────────
+
+    #[test]
+    fn two_objects_two_meshes() {
+        let asset = parse_asset(&fixture("two_objects.obj"), &ObjOptions::default()).unwrap();
+
+        // One MeshData per OBJ object — no merging.
+        assert_eq!(asset.meshes.len(), 2);
+        assert_eq!(asset.meshes[0].vertex_count(), 3);
+        assert_eq!(asset.meshes[1].vertex_count(), 3);
+        assert!(asset.meshes[0].validate().is_ok());
+        assert!(asset.meshes[1].validate().is_ok());
+        // Both meshes have their own local indices.
+        assert_eq!(asset.meshes[1].indices, vec![0, 1, 2]);
+        // No MTL supplied → no materials.
+        assert!(asset.materials.is_empty());
+        assert!(asset.meshes.iter().all(|m| m.material_index.is_none()));
+    }
+
+    // ── parse_asset: MTL ──────────────────────────────────────────
+
+    #[test]
+    fn mtl_materials_indexed() {
+        let options = ObjOptions {
+            mtl: Some(fixture("two_objects.mtl")),
+            ..Default::default()
+        };
+        let asset = parse_asset(&fixture("two_objects_textured.obj"), &options).unwrap();
+
+        assert_eq!(asset.materials.len(), 2);
+        assert_eq!(asset.materials[0].name.as_deref(), Some("red"));
+        assert_eq!(asset.materials[0].base_color, [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(asset.materials[1].name.as_deref(), Some("blue_transparent"));
+        assert_eq!(asset.materials[1].base_color[0..3], [0.0, 0.0, 1.0]);
+
+        // material_id links objects to materials.
+        assert_eq!(asset.meshes[0].material_index, Some(0));
+        assert_eq!(asset.meshes[1].material_index, Some(1));
+        assert!(asset.capabilities().has_materials);
+    }
+
+    #[test]
+    fn mtl_texture_is_uri() {
+        let options = ObjOptions {
+            mtl: Some(fixture("two_objects.mtl")),
+            ..Default::default()
+        };
+        let asset = parse_asset(&fixture("two_objects_textured.obj"), &options).unwrap();
+
+        // map_Kd becomes a Uri texture — core never resolves it.
+        assert_eq!(asset.textures.len(), 1);
+        assert_eq!(
+            asset.textures[0].source,
+            TextureSource::Uri("textures/brick.png".to_string())
+        );
+        assert_eq!(asset.materials[0].base_color_texture, None);
+        assert_eq!(asset.materials[1].base_color_texture, Some(0));
+        assert!(asset.materials[1].has_textures);
+        assert!(!asset.materials[0].has_textures);
+    }
+
+    #[test]
+    fn mtl_alpha_to_base_color() {
+        let options = ObjOptions {
+            mtl: Some(fixture("two_objects.mtl")),
+            ..Default::default()
+        };
+        let asset = parse_asset(&fixture("two_objects_textured.obj"), &options).unwrap();
+
+        // `d 1.0` → opaque, `d 0.5` → alpha 0.5.
+        assert_eq!(asset.materials[0].base_color[3], 1.0);
+        assert_eq!(asset.materials[1].base_color[3], 0.5);
+        assert_eq!(asset.materials[0].alpha_mode, AlphaMode::Opaque);
+        assert_eq!(asset.materials[1].alpha_mode, AlphaMode::Blend);
     }
 
     // ── Error cases ───────────────────────────────────────────────────

@@ -70,6 +70,63 @@ impl MeshFormat {
             .and_then(Self::from_extension)
     }
 
+    /// Detect the format from the bytes themselves — the fallback when
+    /// there is no extension hint or the extension is unrecognised.
+    ///
+    /// The extension stays the fast path; sniffing reads at most the first
+    /// few bytes plus a bounded scan of leading text lines.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use loadfu::MeshFormat;
+    ///
+    /// // glTF binary magic
+    /// assert_eq!(MeshFormat::sniff(b"glTF..."), Some(MeshFormat::Glb));
+    /// assert_eq!(MeshFormat::sniff(b"ply\nformat ascii 1.0"), Some(MeshFormat::Ply));
+    /// assert_eq!(MeshFormat::sniff(b"v 0 0 0\n"), Some(MeshFormat::Obj));
+    /// assert_eq!(MeshFormat::sniff(b"{}"), None); // glTF text — needs the extension
+    /// ```
+    pub fn sniff(bytes: &[u8]) -> Option<Self> {
+        // GLB magic: "glTF" at offset 0.
+        if bytes.starts_with(b"glTF") {
+            return Some(Self::Glb);
+        }
+
+        // PLY header.
+        if bytes.starts_with(b"ply") {
+            return Some(Self::Ply);
+        }
+
+        // Binary STL: 80-byte header + u32 triangle count + 50 bytes/triangle.
+        if bytes.len() >= 84 {
+            let triangles = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]);
+            if triangles > 0 && bytes.len() == 84 + triangles as usize * 50 {
+                return Some(Self::Stl);
+            }
+        }
+
+        // ASCII STL: "solid" at offset 0 (checked after the binary length
+        // heuristic — some writers emit binary STLs with a "solid" header).
+        if bytes.starts_with(b"solid") {
+            return Some(Self::Stl);
+        }
+
+        // OBJ: scan the leading text lines for Wavefront keywords. glTF text
+        // starts with '{' and never matches, so it falls through to None.
+        const OBJ_KEYWORDS: [&str; 7] =
+            ["v ", "vn ", "vt ", "f ", "o ", "mtllib ", "usemtl "];
+        for line in bytes.split(|&b| b == b'\n').take(32) {
+            if let Ok(line) = std::str::from_utf8(line) {
+                if OBJ_KEYWORDS.iter().any(|kw| line.starts_with(kw)) {
+                    return Some(Self::Obj);
+                }
+            }
+        }
+
+        None
+    }
+
     /// Returns `true` if this format is a glTF variant (glTF text or GLB binary).
     ///
     /// glTF formats support full scenes: multiple meshes, PBR materials,
@@ -137,6 +194,7 @@ impl MeshFormat {
                 has_vertex_colors: false,
                 multi_object: false, // STL is always a single mesh
                 has_materials: false,
+                has_nodes: false,
                 has_textures: false,
                 parse_cost: ParseCost::Low, // binary STL is fast
                 estimated_memory: None,
@@ -150,6 +208,7 @@ impl MeshFormat {
                 has_vertex_colors: false,
                 multi_object: true,  // OBJ can have multiple objects/groups
                 has_materials: true, // OBJ can reference MTL files
+                has_nodes: false,
                 has_textures: true,  // MTL can reference texture images
                 parse_cost: ParseCost::Medium, // text parsing + indexing
                 estimated_memory: None,
@@ -163,6 +222,7 @@ impl MeshFormat {
                 has_vertex_colors: true, // glTF supports vertex colors
                 multi_object: true,
                 has_materials: true, // full PBR materials
+                has_nodes: false,
                 has_textures: true,
                 parse_cost: ParseCost::Medium, // JSON parse + binary buffer reads
                 estimated_memory: None,
@@ -176,6 +236,7 @@ impl MeshFormat {
                 has_vertex_colors: true,
                 multi_object: true,
                 has_materials: true,
+                has_nodes: false,
                 has_textures: true,
                 parse_cost: ParseCost::Low, // binary container, faster than text glTF
                 estimated_memory: None,
@@ -189,6 +250,7 @@ impl MeshFormat {
                 has_vertex_colors: true,    // PLY commonly has vertex colors (scanners)
                 multi_object: false,        // PLY is single mesh
                 has_materials: false,       // no material system
+                has_nodes: false,
                 has_textures: false,        // no texture references
                 parse_cost: ParseCost::Low, // binary is fast; ASCII is medium
                 estimated_memory: None,
@@ -280,6 +342,56 @@ mod tests {
     #[test]
     fn from_path_unknown_extension() {
         assert_eq!(MeshFormat::from_path(Path::new("model.fbx")), None);
+    }
+
+    // ── sniff ─────────────────────────────────────────────────────
+
+    #[test]
+    fn sniff_glb_magic() {
+        assert_eq!(MeshFormat::sniff(b"glTF\x02\x00"), Some(MeshFormat::Glb));
+        // The real fixture
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("cube.glb")), Some(MeshFormat::Glb));
+    }
+
+    #[test]
+    fn sniff_ply_header() {
+        assert_eq!(MeshFormat::sniff(b"ply\nformat ascii 1.0"), Some(MeshFormat::Ply));
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle.ply")), Some(MeshFormat::Ply));
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle_binary.ply")), Some(MeshFormat::Ply));
+    }
+
+    #[test]
+    fn sniff_stl_binary_and_ascii() {
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle.stl")), Some(MeshFormat::Stl));
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle_ascii.stl")), Some(MeshFormat::Stl));
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("quad.stl")), Some(MeshFormat::Stl));
+    }
+
+    #[test]
+    fn sniff_obj_keywords() {
+        assert_eq!(MeshFormat::sniff(b"v 0 0 0\nv 1 0 0\n"), Some(MeshFormat::Obj));
+        assert_eq!(MeshFormat::sniff(b"# comment\nf 1 2 3\n"), Some(MeshFormat::Obj));
+        assert_eq!(MeshFormat::sniff(b"mtllib thing.mtl\no thing\n"), Some(MeshFormat::Obj));
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle.obj")), Some(MeshFormat::Obj));
+        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("two_objects.obj")), Some(MeshFormat::Obj));
+    }
+
+    #[test]
+    fn sniff_unknown_returns_none() {
+        assert_eq!(MeshFormat::sniff(b"{}"), None); // glTF text needs the extension
+        assert_eq!(MeshFormat::sniff(b"this is not a mesh"), None);
+        assert_eq!(MeshFormat::sniff(b""), None);
+    }
+
+    #[test]
+    fn sniff_binary_stl_that_starts_with_solid() {
+        // Some writers emit binary STLs with "solid" in the header. The
+        // length math must win over the ASCII "solid" prefix.
+        let mut bytes = b"solid this is binary really".to_vec();
+        bytes.extend(std::iter::repeat(0u8).take(80 - bytes.len()));
+        bytes.extend(1u32.to_le_bytes()); // 1 triangle
+        bytes.extend([0u8; 50]); // triangle data
+        assert_eq!(MeshFormat::sniff(&bytes), Some(MeshFormat::Stl));
     }
 
     // ── Classification helpers ────────────────────────────────────────

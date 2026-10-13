@@ -120,6 +120,7 @@ fn build_mesh_with_stl_normals(stl: &stl_io::IndexedMesh) -> MeshData {
         uvs: None,
         vertex_colors: None,
         indices,
+        material_index: None,
     }
 }
 
@@ -147,6 +148,7 @@ fn build_mesh_auto_normals(stl: &stl_io::IndexedMesh) -> MeshData {
         uvs: None,
         vertex_colors: None,
         indices,
+        material_index: None,
     }
 }
 

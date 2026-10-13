@@ -61,6 +61,105 @@ impl Default for ParseCost {
 }
 
 // ---------------------------------------------------------------------------
+// AlphaMode
+// ---------------------------------------------------------------------------
+
+/// How transparency is handled by a material.
+///
+/// Maps directly to glTF's `alphaMode` and (later) Bevy's alpha handling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AlphaMode {
+    /// Fully opaque — the default.
+    Opaque,
+    /// Hard cutoff: fragments with alpha below `MaterialData::alpha_cutoff`
+    /// are discarded.
+    Mask,
+    /// Ordered blending — true partial transparency.
+    Blend,
+}
+
+impl Default for AlphaMode {
+    fn default() -> Self {
+        Self::Opaque
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Textures
+// ---------------------------------------------------------------------------
+
+/// MIME type of encoded texture data.
+///
+/// Core never decodes image data (no image-codec dependency) — this only
+/// tags what the bytes contain so the consumer can pick a decoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextureMime {
+    /// PNG (`image/png`).
+    Png,
+    /// JPEG (`image/jpeg`).
+    Jpeg,
+}
+
+/// Where a texture's data lives.
+///
+/// Core stays pure: it never opens a [`TextureSource::Uri`]. The Bevy layer
+/// resolves URIs via its load context; core-only consumers that want URIs
+/// resolved do their own IO.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextureSource {
+    /// Encoded image bytes carried inline (glTF/GLB buffer views, data URIs).
+    Embedded {
+        /// Raw, still-encoded image bytes (not decoded pixels).
+        bytes: Vec<u8>,
+        /// What codec the bytes belong to.
+        mime: TextureMime,
+    },
+    /// File reference — resolved by the caller (MTL `map_Kd`, glTF URIs).
+    Uri(String),
+}
+
+impl TextureSource {
+    /// The MIME type of the source, if known.
+    pub fn mime(&self) -> Option<TextureMime> {
+        match self {
+            Self::Embedded { mime, .. } => Some(*mime),
+            Self::Uri(uri) => TextureMime::from_uri(uri),
+        }
+    }
+}
+
+/// A single texture reference extracted from an asset.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextureData {
+    /// Where the encoded bytes (or the file reference) live.
+    pub source: TextureSource,
+    /// Texture name (from the file, if any).
+    pub name: Option<String>,
+}
+
+impl TextureMime {
+    /// Parse a MIME type string (e.g. from glTF `mimeType` fields).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "image/png" => Some(Self::Png),
+            "image/jpeg" | "image/jpg" => Some(Self::Jpeg),
+            _ => None,
+        }
+    }
+
+    /// Guess the MIME type from a file path or URI extension.
+    pub fn from_uri(uri: &str) -> Option<Self> {
+        let path = uri.split(['?', '#']).next().unwrap_or(uri);
+        let ext = path.rsplit('.').next().unwrap_or("");
+        match ext.to_ascii_lowercase().as_str() {
+            "png" => Some(Self::Png),
+            "jpg" | "jpeg" => Some(Self::Jpeg),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MaterialData
 // ---------------------------------------------------------------------------
 
@@ -68,6 +167,9 @@ impl Default for ParseCost {
 ///
 /// Intentionally simple for v0.1 — captures PBR base properties that GLB
 /// and OBJ/MTL can provide. Extensible for future formats.
+///
+/// Texture references are indices into [`AssetData::textures`], so one
+/// texture can be shared by several materials.
 #[derive(Debug, Clone)]
 pub struct MaterialData {
     /// Material name (from the file, if any).
@@ -78,8 +180,24 @@ pub struct MaterialData {
     pub metallic: f32,
     /// Roughness factor (0.0 = smooth, 1.0 = rough).
     pub roughness: f32,
+    /// Emissive color as linear RGB.
+    pub emissive: [f32; 3],
+    /// How transparency is handled.
+    pub alpha_mode: AlphaMode,
+    /// Alpha threshold for [`AlphaMode::Mask`].
+    pub alpha_cutoff: f32,
+    /// Whether back faces should be rendered.
+    pub double_sided: bool,
     /// Whether this material references texture data.
     pub has_textures: bool,
+    /// Base color texture — index into [`AssetData::textures`].
+    pub base_color_texture: Option<usize>,
+    /// Normal map texture — index into [`AssetData::textures`].
+    pub normal_texture: Option<usize>,
+    /// Metallic-roughness texture — index into [`AssetData::textures`].
+    pub metallic_roughness_texture: Option<usize>,
+    /// Emissive texture — index into [`AssetData::textures`].
+    pub emissive_texture: Option<usize>,
 }
 
 impl Default for MaterialData {
@@ -89,8 +207,68 @@ impl Default for MaterialData {
             base_color: [1.0, 1.0, 1.0, 1.0],
             metallic: 0.0,
             roughness: 0.5,
+            emissive: [0.0, 0.0, 0.0],
+            alpha_mode: AlphaMode::Opaque,
+            alpha_cutoff: 0.5,
+            double_sided: false,
             has_textures: false,
+            base_color_texture: None,
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            emissive_texture: None,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NodeData
+// ---------------------------------------------------------------------------
+
+/// One node of a flattened scene hierarchy.
+///
+/// Node trees from formats like glTF are flattened into a single `Vec`:
+/// children and mesh/material references are indices into the owning
+/// [`AssetData`]. A mesh referenced by multiple nodes is instancing —
+/// consumers that want unique geometry can duplicate it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeData {
+    /// Node name (from the file, if any).
+    pub name: Option<String>,
+    /// 4×4 column-major transform (feeds `glam::Mat4::from_cols_array`).
+    pub transform: [f32; 16],
+    /// Mesh index into [`AssetData::meshes`] (`None` = no mesh / empty node).
+    pub mesh: Option<usize>,
+    /// Per-node material override — index into [`AssetData::materials`].
+    /// Rare; most formats bind materials per-mesh instead.
+    pub material: Option<usize>,
+    /// Child node indices into [`AssetData::nodes`].
+    pub children: Vec<usize>,
+}
+
+impl Default for NodeData {
+    fn default() -> Self {
+        Self {
+            name: None,
+            transform: Self::IDENTITY,
+            mesh: None,
+            material: None,
+            children: Vec::new(),
+        }
+    }
+}
+
+impl NodeData {
+    /// Column-major identity matrix.
+    pub const IDENTITY: [f32; 16] = [
+        1.0, 0.0, 0.0, 0.0, //
+        0.0, 1.0, 0.0, 0.0, //
+        0.0, 0.0, 1.0, 0.0, //
+        0.0, 0.0, 0.0, 1.0,
+    ];
+
+    /// The translation part of the transform (column-major: elements 12–14).
+    pub fn translation(&self) -> [f32; 3] {
+        [self.transform[12], self.transform[13], self.transform[14]]
     }
 }
 
@@ -124,6 +302,8 @@ pub struct AssetCapabilities {
     pub has_materials: bool,
     /// Whether texture references (image data) are present.
     pub has_textures: bool,
+    /// Whether a node hierarchy is present.
+    pub has_nodes: bool,
 
     // ── Cost heuristics ───────────────────────────────────────────────
     /// Rough parse cost classification.
@@ -149,6 +329,7 @@ impl Default for AssetCapabilities {
             multi_object: false,
             has_materials: false,
             has_textures: false,
+            has_nodes: false,
             parse_cost: ParseCost::Medium,
             estimated_memory: None,
             supports_mmap: false,
@@ -161,17 +342,28 @@ impl Default for AssetCapabilities {
 // AssetData
 // ---------------------------------------------------------------------------
 
-/// Full output of parsing an asset — geometry and (optionally) materials.
+/// Full output of parsing an asset — geometry, materials, textures, and
+/// (optionally) a node hierarchy.
 ///
 /// Every parser ultimately produces an `AssetData`. Simple formats (STL)
-/// yield a single mesh and no materials; complex formats (GLB) may yield
-/// many meshes and full PBR materials.
-#[derive(Debug, Clone)]
+/// yield a single mesh and nothing else; complex formats (GLB) may yield
+/// many meshes, full PBR materials, textures, and a scene graph.
+#[derive(Debug, Clone, Default)]
 pub struct AssetData {
     /// One or more meshes extracted from the asset.
     pub meshes: Vec<MeshData>,
     /// Material descriptions, if the format provides them.
     pub materials: Vec<MaterialData>,
+    /// Texture references, if the format provides them.
+    ///
+    /// Encoded bytes or file URIs — core never decodes image data.
+    pub textures: Vec<TextureData>,
+    /// Flattened scene nodes, if the format provides a hierarchy.
+    pub nodes: Vec<NodeData>,
+    /// Indices into [`AssetData::nodes`] that have no parent.
+    pub root_nodes: Vec<usize>,
+    /// Asset name (from the file, if any).
+    pub name: Option<String>,
 }
 
 impl AssetData {
@@ -179,7 +371,7 @@ impl AssetData {
     pub fn single(mesh: MeshData) -> Self {
         Self {
             meshes: vec![mesh],
-            materials: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -214,7 +406,11 @@ impl AssetData {
         let has_uvs = self.meshes.iter().any(|m| m.uvs.is_some());
         let has_vertex_colors = self.meshes.iter().any(|m| m.vertex_colors.is_some());
         let has_materials = !self.materials.is_empty();
-        let has_textures = self.materials.iter().any(|m| m.has_textures);
+        // Derived: textures live on the asset; `MaterialData::has_textures`
+        // stays in sync for materials-only consumers.
+        let has_textures =
+            !self.textures.is_empty() || self.materials.iter().any(|m| m.has_textures);
+        let has_nodes = !self.nodes.is_empty();
         let multi_object = self.meshes.len() > 1;
 
         // Rough memory estimate: positions + normals + uvs + indices
@@ -243,6 +439,7 @@ impl AssetData {
             multi_object,
             has_materials,
             has_textures,
+            has_nodes,
             parse_cost: ParseCost::Low, // already parsed — cost is sunk
             estimated_memory: Some(mem),
             supports_mmap: false,
@@ -287,7 +484,125 @@ mod tests {
         assert!(!mat.has_textures);
     }
 
-    // ── AssetCapabilities defaults ────────────────────────────────────
+    // ── AlphaMode ───────────────────────────────────────────────────
+
+    #[test]
+    fn alpha_mode_default_is_opaque() {
+        assert_eq!(AlphaMode::default(), AlphaMode::Opaque);
+    }
+
+    // ── TextureMime ──────────────────────────────────────────────
+
+    #[test]
+    fn texture_mime_parse() {
+        assert_eq!(TextureMime::parse("image/png"), Some(TextureMime::Png));
+        assert_eq!(TextureMime::parse("image/jpeg"), Some(TextureMime::Jpeg));
+        assert_eq!(TextureMime::parse("image/jpg"), Some(TextureMime::Jpeg));
+        assert_eq!(TextureMime::parse("image/webp"), None);
+    }
+
+    #[test]
+    fn texture_mime_from_uri() {
+        assert_eq!(TextureMime::from_uri("textures/brick.png"), Some(TextureMime::Png));
+        assert_eq!(TextureMime::from_uri("photo.JPG"), Some(TextureMime::Jpeg));
+        assert_eq!(TextureMime::from_uri("noext"), None);
+    }
+
+    #[test]
+    fn texture_source_embedded_mime() {
+        let src = TextureSource::Embedded {
+            bytes: vec![1, 2, 3],
+            mime: TextureMime::Png,
+        };
+        assert_eq!(src.mime(), Some(TextureMime::Png));
+    }
+
+    #[test]
+    fn texture_source_uri_mime_guessed() {
+        let src = TextureSource::Uri("textures/brick.png".to_string());
+        assert_eq!(src.mime(), Some(TextureMime::Png));
+    }
+
+    // ── NodeData ─────────────────────────────────────────────────
+
+    #[test]
+    fn node_data_default_is_identity() {
+        let node = NodeData::default();
+        assert_eq!(node.transform, NodeData::IDENTITY);
+        assert_eq!(node.translation(), [0.0, 0.0, 0.0]);
+        assert!(node.mesh.is_none());
+        assert!(node.children.is_empty());
+    }
+
+    #[test]
+    fn node_data_translation_reads_column_major() {
+        let mut node = NodeData::default();
+        node.transform[12] = 1.0;
+        node.transform[13] = 2.0;
+        node.transform[14] = 3.0;
+        assert_eq!(node.translation(), [1.0, 2.0, 3.0]);
+    }
+
+    // ── AssetData with textures/nodes ────────────────────────────
+
+    #[test]
+    fn asset_data_with_textures_and_nodes_round_trips() {
+        let data = AssetData {
+            meshes: vec![sample_triangle()],
+            textures: vec![TextureData {
+                source: TextureSource::Embedded {
+                    bytes: vec![0x89, b'P'],
+                    mime: TextureMime::Png,
+                },
+                name: Some("red".into()),
+            }],
+            nodes: vec![NodeData {
+                name: Some("root".into()),
+                mesh: Some(0),
+                ..Default::default()
+            }],
+            root_nodes: vec![0],
+            name: Some("thing".into()),
+            ..Default::default()
+        };
+
+        // Debug round-trip
+        let debug = format!("{:?}", data);
+        assert!(debug.contains("red"));
+
+        // Clone round-trip
+        let clone = data.clone();
+        assert_eq!(clone.textures.len(), 1);
+        assert_eq!(clone.nodes.len(), 1);
+        assert_eq!(clone.root_nodes, vec![0]);
+    }
+
+    #[test]
+    fn capabilities_derive_has_textures_from_asset_textures() {
+        let data = AssetData {
+            meshes: vec![sample_triangle()],
+            textures: vec![TextureData {
+                source: TextureSource::Uri("t.png".into()),
+                name: None,
+            }],
+            ..Default::default()
+        };
+        assert!(data.capabilities().has_textures);
+    }
+
+    #[test]
+    fn capabilities_derive_has_nodes() {
+        let data = AssetData {
+            nodes: vec![NodeData::default()],
+            root_nodes: vec![0],
+            ..Default::default()
+        };
+        let cap = data.capabilities();
+        assert!(cap.has_nodes);
+        assert!(!cap.has_materials);
+    }
+
+    // ── AssetCapabilities defaults ───────────────────────────────
 
     #[test]
     fn capabilities_default() {
@@ -299,6 +614,7 @@ mod tests {
         assert!(!cap.multi_object);
         assert!(!cap.has_materials);
         assert!(!cap.has_textures);
+        assert!(!cap.has_nodes);
         assert_eq!(cap.parse_cost, ParseCost::Medium);
         assert!(cap.estimated_memory.is_none());
         assert!(!cap.supports_mmap);
@@ -320,7 +636,7 @@ mod tests {
     fn asset_data_totals() {
         let data = AssetData {
             meshes: vec![sample_triangle(), sample_triangle()],
-            materials: Vec::new(),
+            ..Default::default()
         };
         assert_eq!(data.total_vertices(), 6);
         assert_eq!(data.total_triangles(), 2);
@@ -355,7 +671,7 @@ mod tests {
     fn capabilities_multi_object() {
         let data = AssetData {
             meshes: vec![sample_triangle(), sample_triangle_bare()],
-            materials: Vec::new(),
+            ..Default::default()
         };
         let cap = data.capabilities();
         assert!(cap.multi_object);
@@ -374,6 +690,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            ..Default::default()
         };
         let cap = data.capabilities();
         assert!(cap.has_materials);
@@ -385,6 +702,7 @@ mod tests {
         let data = AssetData {
             meshes: vec![sample_triangle()],
             materials: vec![MaterialData::default()],
+            ..Default::default()
         };
         let cap = data.capabilities();
         assert!(cap.has_materials);
@@ -395,10 +713,7 @@ mod tests {
 
     #[test]
     fn empty_asset_data() {
-        let data = AssetData {
-            meshes: Vec::new(),
-            materials: Vec::new(),
-        };
+        let data = AssetData::default();
         assert_eq!(data.total_vertices(), 0);
         assert_eq!(data.total_triangles(), 0);
         let cap = data.capabilities();

@@ -120,6 +120,9 @@ impl AssetLoader for ObjLoader {
         let opts = obj::ObjOptions {
             recompute_normals: settings.recompute_normals,
             triangulate: settings.triangulate,
+            // MTL is not resolved by the core parser; the Bevy layer could
+            // resolve sibling files via the load context in the future.
+            mtl: None,
         };
         let mesh_data = obj::parse_with_options(&bytes, &opts)?;
 
