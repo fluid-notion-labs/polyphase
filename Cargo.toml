@@ -22,7 +22,7 @@ vtkio = { path = "../vtkio", default-features = false, features = ["xml"], optio
 serde = { version = "1", features = ["derive"], optional = true }
 
 # Bevy integration (optional, behind feature flag)
-bevy = { version = "0.18", default-features = false, optional = true, features = [
+bevy = { version = "0.19", default-features = false, optional = true, features = [
     "bevy_asset",
     "bevy_render",
     "bevy_mesh",
