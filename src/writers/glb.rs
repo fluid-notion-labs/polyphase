@@ -449,16 +449,22 @@ fn write_glb_inner(asset: &AssetData, pretty: bool) -> Result<Vec<u8>, WriteErro
         .collect();
 
     // Any mesh not attached to a node gets a standalone node so geometry is
-    // never dropped.
-    let orphan_nodes: Vec<json::Index<json::Node>> = referenced_meshes
-        .iter()
-        .zip(&mesh_indices)
-        .filter(|(used, _)| !**used)
-        .map(|(_, mesh)| root.push(json::Node {
-            mesh: Some(*mesh),
-            ..Default::default()
-        }))
-        .collect();
+    // never dropped. Only relevant when a hierarchy exists — with no nodes
+    // at all, the branch below emits one standalone node per mesh, and
+    // running this too would duplicate every node.
+    let orphan_nodes: Vec<json::Index<json::Node>> = if asset.nodes.is_empty() {
+        Vec::new()
+    } else {
+        referenced_meshes
+            .iter()
+            .zip(&mesh_indices)
+            .filter(|(used, _)| !**used)
+            .map(|(_, mesh)| root.push(json::Node {
+                mesh: Some(*mesh),
+                ..Default::default()
+            }))
+            .collect()
+    };
 
     let scene_nodes: Vec<json::Index<json::Node>> = if asset.nodes.is_empty() {
         // No hierarchy: one standalone node per mesh.
@@ -681,6 +687,7 @@ fn texture_info(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mesh_data::MeshData;
 
     #[test]
     fn buffer_builder_aligns_and_pads() {
@@ -706,6 +713,63 @@ mod tests {
             gltf_mode(TopologyKind::PointList),
             json::mesh::Mode::Points
         ));
+    }
+
+    #[test]
+    fn single_mesh_no_hierarchy_emits_one_node() {
+        // Regression: with no nodes, the standalone-node-per-mesh branch and
+        // the orphan-mesh branch both fired, writing duplicate unreferenced
+        // nodes into the JSON.
+        let mesh = MeshData {
+            topology: TopologyKind::TriangleList,
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: None,
+            uvs: None,
+            vertex_colors: None,
+            indices: vec![0, 1, 2],
+            material_index: None,
+        };
+        let bytes = write_glb(&AssetData::single(mesh)).unwrap();
+
+        let glb = gltf::binary::Glb::from_slice(&bytes).unwrap();
+        let root: json::Root = json::deserialize::from_slice(&glb.json).unwrap();
+        assert_eq!(root.nodes.len(), 1);
+        assert_eq!(root.nodes[0].mesh, Some(json::Index::new(0)));
+        assert_eq!(root.scenes.len(), 1);
+        assert_eq!(root.scenes[0].nodes, vec![json::Index::new(0)]);
+    }
+
+    #[test]
+    fn unreferenced_mesh_gets_orphan_node() {
+        // A mesh not attached to any node must still appear in the scene.
+        let mesh = MeshData {
+            topology: TopologyKind::TriangleList,
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: None,
+            uvs: None,
+            vertex_colors: None,
+            indices: vec![0, 1, 2],
+            material_index: None,
+        };
+        let mut asset = AssetData::single(mesh.clone());
+        asset.meshes.push(mesh);
+        asset.nodes.push(crate::capabilities::NodeData {
+            mesh: Some(0),
+            ..Default::default()
+        }); // node 0 references mesh 0
+        asset.root_nodes.push(0);
+        let bytes = write_glb(&asset).unwrap();
+
+        let glb = gltf::binary::Glb::from_slice(&bytes).unwrap();
+        let root: json::Root = json::deserialize::from_slice(&glb.json).unwrap();
+        assert_eq!(root.nodes.len(), 2);
+        let scene_meshes: Vec<Option<u32>> = root
+            .scenes[0]
+            .nodes
+            .iter()
+            .map(|i| root.nodes[i.value()].mesh.map(|m| m.value() as u32))
+            .collect();
+        assert_eq!(scene_meshes, vec![Some(0), Some(1)]);
     }
 
     #[test]
