@@ -2161,6 +2161,7 @@ dependencies = [
  "bevy",
  "bytemuck",
  "gltf",
+ "gltf-json",
  "meshopt",
  "serde",
  "serde_json",

@@ -144,7 +144,7 @@ pub struct TextureData {
 /// `wrapS`/`wrapT` default to REPEAT. [`SamplerData::default_sampler`]
 /// returns exactly those defaults, matching the glTF 2.0 spec's implicit
 /// sampler.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SamplerData {
     /// Magnification filter (GL enum: 9728 NEAREST, 9729 LINEAR).
     /// `None` = "auto" (LINEAR).
@@ -281,6 +281,23 @@ pub struct MaterialData {
     pub metallic_roughness_texture: Option<TextureSlot>,
     /// Emissive texture slot.
     pub emissive_texture: Option<TextureSlot>,
+}
+
+impl MaterialData {
+    /// Iterate over this material's texture slots in a fixed order.
+    ///
+    /// Used by writers (which must validate all referenced images exist) and
+    /// by consumers that want every slot without caring which one it is.
+    pub fn texture_slots(&self) -> impl Iterator<Item = &TextureSlot> {
+        [
+            self.base_color_texture.as_ref(),
+            self.normal_texture.as_ref(),
+            self.metallic_roughness_texture.as_ref(),
+            self.emissive_texture.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+    }
 }
 
 impl Default for MaterialData {

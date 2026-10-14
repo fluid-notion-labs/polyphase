@@ -37,6 +37,7 @@ pub mod error;
 pub mod format;
 pub mod mesh_data;
 pub mod parsers;
+pub mod writers;
 
 #[cfg(feature = "bevy")]
 pub mod bevy_integration;
@@ -103,6 +104,7 @@ pub use error::{GlbError, LoadError, ObjError, PlyError, StlError};
 pub use format::MeshFormat;
 pub use mesh_data::{MeshData, MeshDataError};
 pub use parsers::{glb, obj, ply, stl};
+pub use writers::WriteError;
 
 // ── Bevy integration re-exports ───────────────────────────────────────
 

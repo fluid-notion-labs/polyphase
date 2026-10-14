@@ -13,6 +13,8 @@ stl_io = "0.8"
 tobj = { version = "4.0", default-features = false }
 base64 = "0.22"
 gltf = { version = "1.4", features = ["import", "extensions"] }
+# GLB writer: structured glTF JSON generation (same version as the reader crate)
+gltf-json = { version = "1.4", features = ["names", "extensions"] }
 bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 thiserror = "2"
 

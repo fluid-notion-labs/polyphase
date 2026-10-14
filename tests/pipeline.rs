@@ -3,7 +3,11 @@
 //! These tests exercise the public API across module boundaries, ensuring
 //! that parsers, validation, and capabilities work together correctly.
 
+use polyphase::capabilities::{
+    AlphaMode, MaterialData, NodeData, SamplerData, TextureMime, TextureSlot, TextureSource,
+};
 use polyphase::parsers::{glb, obj, ply, stl};
+use polyphase::writers::glb::{write_glb, write_glb_pretty};
 use polyphase::{AssetCapabilities, AssetData, MeshData, MeshFormat, ParseCost};
 use std::path::Path;
 
@@ -496,6 +500,328 @@ fn mesh_memory_full(
     }
     total += indices * 4; // indices: u32
     total as u64
+}
+
+// ── GLB writer round-trip ──────────────────────────────────────────────
+//
+// fixture → parse_asset → write_glb → parse_asset → compare.
+//
+// The writer synthesizes standalone nodes for meshes not referenced by any
+// node, so node comparisons are only exact where the input's hierarchy was
+// complete. All mesh comparisons are exact (`MeshData` derives `PartialEq`
+// and every f32 survives the f32→f64→JSON→f32 round trip losslessly).
+
+/// Round-trip an asset through the GLB writer and re-parse it.
+fn roundtrip(asset: &AssetData) -> AssetData {
+    let bytes = write_glb(asset).expect("write_glb should succeed");
+    glb::parse_asset(&bytes).expect("written GLB should re-parse")
+}
+
+/// Compare two materials field by field (`MaterialData` has no `PartialEq`).
+fn assert_materials_eq(got: &MaterialData, want: &MaterialData) {
+    assert_eq!(got.name, want.name, "material name");
+    assert_eq!(got.base_color, want.base_color, "base_color");
+    assert_eq!(got.metallic, want.metallic, "metallic");
+    assert_eq!(got.roughness, want.roughness, "roughness");
+    assert_eq!(got.emissive, want.emissive, "emissive");
+    assert_eq!(got.alpha_mode, want.alpha_mode, "alpha_mode");
+    assert_eq!(got.alpha_cutoff, want.alpha_cutoff, "alpha_cutoff");
+    assert_eq!(got.double_sided, want.double_sided, "double_sided");
+    assert_eq!(got.has_textures, want.has_textures, "has_textures");
+    assert_eq!(
+        got.base_color_texture, want.base_color_texture,
+        "base_color_texture"
+    );
+    assert_eq!(got.normal_texture, want.normal_texture, "normal_texture");
+    assert_eq!(
+        got.metallic_roughness_texture, want.metallic_roughness_texture,
+        "metallic_roughness_texture"
+    );
+    assert_eq!(got.emissive_texture, want.emissive_texture, "emissive_texture");
+}
+
+#[test]
+fn roundtrip_glb_cube() {
+    let original = glb::parse_asset(&fixture("cube.glb")).unwrap();
+    let reparsed = roundtrip(&original);
+
+    assert_eq!(reparsed.meshes, original.meshes);
+    // The hierarchy was complete (one node per mesh), so nodes survive too.
+    assert_eq!(reparsed.nodes, original.nodes);
+    assert_eq!(reparsed.root_nodes, original.root_nodes);
+}
+
+#[test]
+fn roundtrip_glb_pretty_json() {
+    // The debug-friendly pretty variant must be semantically identical.
+    let original = glb::parse_asset(&fixture("cube.glb")).unwrap();
+    let bytes = write_glb_pretty(&original).unwrap();
+    let reparsed = glb::parse_asset(&bytes).unwrap();
+
+    assert_eq!(reparsed.meshes, original.meshes);
+    assert_eq!(reparsed.nodes, original.nodes);
+}
+
+#[test]
+fn roundtrip_stl_to_glb() {
+    // A hierarchy-less format written through the GLB writer: every mesh
+    // gets a synthesized standalone node, but the mesh data must match.
+    let mesh = stl::parse(&fixture("quad.stl")).unwrap();
+    mesh.validate().unwrap();
+    let asset = AssetData::single(mesh);
+
+    let reparsed = roundtrip(&asset);
+    assert_eq!(reparsed.meshes.len(), 1);
+    assert_eq!(reparsed.meshes[0], asset.meshes[0]);
+    // The writer attached the mesh to a node so geometry is never dropped.
+    assert_eq!(reparsed.nodes.len(), 1);
+    assert_eq!(reparsed.nodes[0].mesh, Some(0));
+}
+
+#[test]
+fn roundtrip_glb_textured() {
+    let original = glb::parse_asset(&fixture("cube_textured.glb")).unwrap();
+    let reparsed = roundtrip(&original);
+
+    assert_eq!(reparsed.meshes, original.meshes);
+    assert_eq!(reparsed.meshes[0].material_index, Some(0));
+    assert_eq!(reparsed.meshes[1].material_index, Some(1));
+
+    // Materials survive with all factors, alpha state, and texture slots.
+    assert_eq!(reparsed.materials.len(), original.materials.len());
+    for (got, want) in reparsed.materials.iter().zip(&original.materials) {
+        assert_materials_eq(got, want);
+    }
+
+    // Embedded texture bytes and name survive the binary buffer.
+    assert_eq!(reparsed.textures.len(), 1);
+    assert_eq!(reparsed.textures[0].name, original.textures[0].name);
+    match (&reparsed.textures[0].source, &original.textures[0].source) {
+        (
+            TextureSource::Embedded { bytes: got, mime: got_mime },
+            TextureSource::Embedded { bytes: want, mime: want_mime },
+        ) => {
+            assert_eq!(got, want, "texture bytes must survive exactly");
+            assert_eq!(got_mime, want_mime);
+        }
+        other => panic!("expected embedded textures on both sides: {other:?}"),
+    }
+}
+
+#[test]
+fn roundtrip_glb_hierarchy() {
+    let original = glb::parse_asset(&fixture("cube_hierarchy.glb")).unwrap();
+    let reparsed = roundtrip(&original);
+
+    assert_eq!(reparsed.meshes, original.meshes);
+    // Names, translations, children, and instancing (shared mesh index).
+    assert_eq!(reparsed.nodes, original.nodes);
+    assert_eq!(reparsed.root_nodes, original.root_nodes);
+    assert_eq!(reparsed.nodes[0].name.as_deref(), Some("parent"));
+    assert_eq!(reparsed.nodes[0].translation(), [1.0, 2.0, 3.0]);
+    assert_eq!(reparsed.nodes[0].children, vec![1]);
+    assert_eq!(reparsed.nodes[0].mesh, Some(0));
+    assert_eq!(reparsed.nodes[1].mesh, Some(0));
+    assert_eq!(reparsed.meshes.len(), 1); // instancing preserved
+}
+
+#[test]
+fn roundtrip_glb_lines() {
+    // cube_lines.glb has one node but two meshes — mesh 1 is an orphan.
+    // The writer keeps it with a synthesized standalone node, so the
+    // hierarchy changes but no geometry is dropped.
+    let original = glb::parse_asset(&fixture("cube_lines.glb")).unwrap();
+    let reparsed = roundtrip(&original);
+
+    assert_eq!(reparsed.meshes, original.meshes);
+    assert_eq!(reparsed.meshes[0].topology, polyphase::TopologyKind::TriangleList);
+    assert_eq!(reparsed.meshes[1].topology, polyphase::TopologyKind::LineList);
+
+    // Both meshes are reachable from the scene.
+    assert_eq!(reparsed.nodes.len(), 2);
+    assert_eq!(reparsed.root_nodes.len(), 2);
+    let mut referenced = vec![false; reparsed.meshes.len()];
+    for node in &reparsed.nodes {
+        if let Some(m) = node.mesh {
+            assert!(m < referenced.len(), "node references mesh {m} out of range");
+            referenced[m] = true;
+        }
+    }
+    assert!(referenced.iter().all(|used| *used), "all meshes attached");
+}
+
+#[cfg(feature = "meshopt")]
+#[test]
+fn roundtrip_glb_meshopt_decodes_to_plain() {
+    // Meshopt-compressed input is decoded on parse; the writer emits plain
+    // geometry, so the round trip must reproduce the decoded values exactly.
+    let original = glb::parse_asset(&fixture("quad_meshopt.glb")).unwrap();
+    let reparsed = roundtrip(&original);
+
+    assert_eq!(reparsed.meshes, original.meshes);
+}
+
+#[test]
+fn roundtrip_glb_full_featured_synthetic() {
+    // A synthetic asset exercising everything the writer supports: two
+    // topologies, normals + UVs + vertex colors, all four texture slots,
+    // two samplers, Mask alpha, double-sided materials, and a hierarchy.
+    let asset = AssetData {
+        meshes: vec![
+            MeshData {
+                topology: polyphase::TopologyKind::TriangleList,
+                positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
+                uvs: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+                vertex_colors: Some(vec![
+                    [1.0, 0.0, 0.0, 1.0],
+                    [0.0, 1.0, 0.0, 0.5],
+                    [0.0, 0.0, 1.0, 0.0],
+                ]),
+                indices: vec![0, 1, 2],
+                material_index: Some(0),
+            },
+            MeshData {
+                topology: polyphase::TopologyKind::LineList,
+                positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                normals: None,
+                uvs: None,
+                vertex_colors: None,
+                indices: vec![0, 1],
+                material_index: Some(1),
+            },
+        ],
+        materials: vec![
+            MaterialData {
+                name: Some("full".to_string()),
+                base_color: [1.0, 0.25, 0.0, 1.0],
+                metallic: 0.75,
+                roughness: 0.25,
+                emissive: [0.5, 0.25, 0.125],
+                alpha_mode: AlphaMode::Opaque,
+                alpha_cutoff: 0.5,
+                double_sided: false,
+                has_textures: true,
+                base_color_texture: Some(TextureSlot {
+                    image: 0,
+                    tex_coord: 0,
+                    sampler: SamplerData {
+                        mag_filter: Some(polyphase::GL_NEAREST),
+                        min_filter: Some(polyphase::GL_NEAREST_MIPMAP_LINEAR),
+                        wrap_s: polyphase::GL_CLAMP_TO_EDGE,
+                        wrap_t: polyphase::GL_MIRRORED_REPEAT,
+                    },
+                }),
+                // Same image, default sampler — different texture object.
+                normal_texture: Some(TextureSlot {
+                    image: 0,
+                    tex_coord: 1,
+                    sampler: SamplerData::default_sampler(),
+                }),
+                metallic_roughness_texture: Some(TextureSlot {
+                    image: 1,
+                    tex_coord: 0,
+                    sampler: SamplerData::default_sampler(),
+                }),
+                emissive_texture: Some(TextureSlot {
+                    image: 1,
+                    tex_coord: 2,
+                    sampler: SamplerData {
+                        mag_filter: Some(polyphase::GL_LINEAR),
+                        min_filter: None,
+                        wrap_s: polyphase::GL_WRAP_REPEAT,
+                        wrap_t: polyphase::GL_CLAMP_TO_EDGE,
+                    },
+                }),
+            },
+            MaterialData {
+                name: Some("masked".to_string()),
+                base_color: [0.0, 0.0, 0.0, 0.75],
+                metallic: 1.0,
+                roughness: 0.0,
+                emissive: [0.0, 0.0, 0.0],
+                alpha_mode: AlphaMode::Mask,
+                alpha_cutoff: 0.7,
+                double_sided: true,
+                has_textures: false,
+                base_color_texture: None,
+                normal_texture: None,
+                metallic_roughness_texture: None,
+                emissive_texture: None,
+            },
+        ],
+        // Real 1×1 PNGs — the `gltf` crate decodes embedded images during
+        // import, so the bytes must be genuinely decodable.
+        textures: vec![
+            polyphase::TextureData {
+                source: TextureSource::Embedded {
+                    bytes: fixture("pixel_red.png"),
+                    mime: TextureMime::Png,
+                },
+                name: Some("one".to_string()),
+            },
+            polyphase::TextureData {
+                source: TextureSource::Embedded {
+                    bytes: fixture("pixel_blue.png"),
+                    mime: TextureMime::Png,
+                },
+                name: Some("two".to_string()),
+            },
+        ],
+        nodes: vec![
+            NodeData {
+                name: Some("parent".to_string()),
+                transform: {
+                    let mut m = NodeData::IDENTITY;
+                    m[12] = 1.0;
+                    m[13] = 2.0;
+                    m[14] = 3.0;
+                    m
+                },
+                mesh: Some(0),
+                material: None,
+                children: vec![1],
+            },
+            NodeData {
+                name: Some("child".to_string()),
+                transform: NodeData::IDENTITY,
+                mesh: Some(1),
+                material: None,
+                children: Vec::new(),
+            },
+        ],
+        root_nodes: vec![0],
+        name: Some("synthetic".to_string()),
+    };
+
+    let reparsed = roundtrip(&asset);
+
+    // Every mesh byte-identical through the round trip.
+    assert_eq!(reparsed.meshes, asset.meshes);
+
+    assert_eq!(reparsed.materials.len(), 2);
+    assert_materials_eq(&reparsed.materials[0], &asset.materials[0]);
+    assert_materials_eq(&reparsed.materials[1], &asset.materials[1]);
+
+    // Texture bytes and names survive.
+    assert_eq!(reparsed.textures.len(), 2);
+    for (got, want) in reparsed.textures.iter().zip(&asset.textures) {
+        assert_eq!(got.name, want.name);
+        match (&got.source, &want.source) {
+            (
+                TextureSource::Embedded { bytes: got, mime: got_mime },
+                TextureSource::Embedded { bytes: want, mime: want_mime },
+            ) => {
+                assert_eq!(got, want);
+                assert_eq!(got_mime, want_mime);
+            }
+            other => panic!("expected embedded textures: {other:?}"),
+        }
+    }
+
+    // Hierarchy survives: names, transforms, children, mesh bindings.
+    assert_eq!(reparsed.nodes, asset.nodes);
+    assert_eq!(reparsed.root_nodes, asset.root_nodes);
 }
 
 /// Helper to verify triangle count from capabilities memory estimate.

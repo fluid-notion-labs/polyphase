@@ -558,6 +558,13 @@ fn extract_primitive(
         .get(&gltf::Semantic::TexCoords(0))
         .map(|accessor| read_vec2_accessor(&accessor, buffers));
 
+    // ── Vertex colors (optional, first set only) ──────────────────────
+
+    let vertex_colors = primitive
+        .get(&gltf::Semantic::Colors(0))
+        .and_then(|accessor| read_colors(&accessor, buffers))
+        .filter(|colors| !colors.is_empty());
+
     // ── Indices ───────────────────────────────────────────────────────
 
     let raw_indices = primitive
@@ -586,7 +593,7 @@ fn extract_primitive(
         positions,
         normals,
         uvs,
-        vertex_colors: None,
+        vertex_colors,
         indices,
         material_index: None,
     })
@@ -735,6 +742,64 @@ fn read_vec2_accessor(accessor: &gltf::Accessor<'_>, buffers: &Buffers<'_>) -> V
             buffer.0[start + 7],
         ]);
         result.push([u, v]);
+    }
+    result
+}
+
+/// Read a `COLOR_0` accessor (F32 VEC3 or VEC4) as RGBA.
+///
+/// RGB colors are promoted to RGBA with alpha 1.0. Other encodings
+/// (normalized u8/u16, etc.) are not supported and yield `None` — colors
+/// are simply omitted rather than misread.
+fn read_colors(
+    accessor: &gltf::Accessor<'_>,
+    buffers: &Buffers<'_>,
+) -> Option<Vec<[f32; 4]>> {
+    use gltf::accessor::{DataType, Dimensions};
+    match (accessor.dimensions(), accessor.data_type()) {
+        (Dimensions::Vec4, DataType::F32) => Some(read_vec4_accessor(accessor, buffers)),
+        (Dimensions::Vec3, DataType::F32) => {
+            let rgb = read_vec3_accessor(accessor, buffers);
+            Some(rgb.into_iter().map(|c| [c[0], c[1], c[2], 1.0]).collect())
+        }
+        _ => None,
+    }
+}
+
+/// Read a VEC4 (f32×4) accessor into `Vec<[f32; 4]>`.
+fn read_vec4_accessor(accessor: &gltf::Accessor<'_>, buffers: &Buffers<'_>) -> Vec<[f32; 4]> {
+    let view = match accessor.view() {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let offset = accessor.offset();
+    let count = accessor.count();
+
+    // meshopt-decompressed views: read from decoded bytes instead.
+    if let Some(dv) = buffers.decoded.get(&view.index()) {
+        return read_f32x::<4>(&dv.bytes, dv.stride, offset, count);
+    }
+
+    let buffer = &buffers.raw[view.buffer().index()];
+    let stride = view.stride().unwrap_or(std::mem::size_of::<[f32; 4]>());
+    let start0 = view.offset() + offset;
+
+    let mut result = Vec::with_capacity(count);
+    for i in 0..count {
+        let start = start0 + i * stride;
+        if start + 16 > buffer.0.len() {
+            break;
+        }
+        let mut out = [0.0f32; 4];
+        for (c, slot) in out.iter_mut().enumerate() {
+            *slot = f32::from_le_bytes([
+                buffer.0[start + c * 4],
+                buffer.0[start + c * 4 + 1],
+                buffer.0[start + c * 4 + 2],
+                buffer.0[start + c * 4 + 3],
+            ]);
+        }
+        result.push(out);
     }
     result
 }
