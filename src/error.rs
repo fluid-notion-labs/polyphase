@@ -108,6 +108,36 @@ pub enum GlbError {
     /// A buffer view referenced data outside its buffer.
     #[error("glTF buffer view is out of bounds")]
     InvalidBufferView,
+
+    /// The file uses `EXT_meshopt_compression` but the `meshopt` feature is
+    /// not enabled. Rebuild with `--features meshopt`.
+    #[error(
+        "GLB uses EXT_meshopt_compression (buffer view {view}); rebuild loadfu with the `meshopt` feature"
+    )]
+    MeshoptRequired {
+        /// Index of the first compressed buffer view.
+        view: usize,
+    },
+
+    /// meshopt decompression failed.
+    #[error("failed to decode meshopt buffer view {view}: {reason}")]
+    MeshoptDecode {
+        /// Index of the compressed buffer view.
+        view: usize,
+        /// Decoder error message.
+        reason: String,
+    },
+
+    /// A meshopt-compressed view used a mode/stride this decoder cannot
+    /// handle (only `ATTRIBUTES` with f32 strides of 4/8/12/16 and
+    /// `INDICES` are supported; compression filters are ignored).
+    #[error("unsupported meshopt compression in buffer view {view}: {reason}")]
+    MeshoptUnsupported {
+        /// Index of the compressed buffer view.
+        view: usize,
+        /// What was unsupported.
+        reason: String,
+    },
 }
 
 // ---------------------------------------------------------------------------

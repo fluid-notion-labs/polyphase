@@ -12,9 +12,13 @@ license = "MIT OR Apache-2.0"
 stl_io = "0.8"
 tobj = { version = "4.0", default-features = false }
 base64 = "0.22"
-gltf = { version = "1.4", features = ["import"] }
+gltf = { version = "1.4", features = ["import", "extensions"] }
 bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 thiserror = "2"
+
+# meshopt-compressed GLB support (EXT_meshopt_compression), optional —
+# FFI to meshoptimizer; see docs/architecture/dependencies.md
+meshopt = { version = "0.6", optional = true }
 
 # VTK format support (optional, behind vtk feature flag)
 vtkio = { path = "../vtkio", default-features = false, features = ["xml"], optional = true }
@@ -29,7 +33,13 @@ bevy = { version = "0.18", default-features = false, optional = true, features =
     "bevy_mesh",
 ] }
 
+# Used by examples/gen_meshopt_fixture.rs
+[dev-dependencies]
+anyhow = "1"
+serde_json = "1"
+
 [features]
 default = []
 bevy = ["dep:bevy", "dep:serde"]
 vtk = ["dep:vtkio"]
+meshopt = ["dep:meshopt"]

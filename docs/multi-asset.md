@@ -29,6 +29,7 @@ GLB parser reads UV set 0 and drops `_images` on the floor.
 | **Node hierarchy / transforms** | ❌ | — |
 | Per-mesh material link | ✅ `MeshData::material_index`, bound per primitive | `parsers/glb.rs` |
 | **Samplers** | ✅ resolved inline on each `TextureSlot` (`image`, `tex_coord`, `sampler: SamplerData`); GL enum consts exported | `capabilities.rs` |
+| **meshopt-compressed GLB** | ✅ behind the `meshopt` feature (positions/normals/UVs/indices decode; compression filters ignored, like the reference reader); without it: clear `MeshoptRequired` error | `parsers/glb.rs`, `examples/gen_meshopt_fixture.rs` |
 | VTK | 🔒 `vtk` feature, parser not yet written (`loadfu-cnj`) | `Cargo.toml`, `ref/vtk_samples/` |
 
 So: **UVs are done.** The work is textures → materials → hierarchy →

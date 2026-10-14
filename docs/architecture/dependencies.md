@@ -21,6 +21,7 @@ Rules and rationale for loadfu's dependency choices. Read this before adding a c
 | `bytemuck` | 1 | No | Safe transmute for vertex data. Essential for zero-copy paths and buffer interop. |
 | `thiserror` | 2 | No | Error derive macros. Eliminates hand-rolled `Display`/`Error` impls across all error types. |
 | `base64` | 0.22 | No | Decoding glTF data-URI images/buffers for the multi-asset `parse_asset` path. Tiny, standard, no alternative worth considering for a single decode call. |
+| `meshopt` | 0.6 | **Yes** (`meshopt`) | Decoding `EXT_meshopt_compression` GLB buffer views (the standard glTF compression, produced by gltf-transform, Blender exporters, etc.). FFI to meshoptimizer — hence feature-gated like `vtk`. Used by the GLB parser's `decode_meshopt_views`; without the feature, compressed files produce a clear `MeshoptRequired` error. Also used by `examples/gen_meshopt_fixture.rs` to regenerate the compressed test fixture. |
 | `bevy` | 0.18 | **Yes** (`bevy`) | Engine integration. Gated behind `bevy` feature. Only `bevy_asset`, `bevy_render`, `bevy_mesh`. |
 | `vtkio` | 0.6.3 | **Yes** (`vtk`) | VTK format parsing (legacy + XML). Vendored at `vendor/vtkio` on branch `loadfu-vendor`. Features: `xml` only (no compression). See VTK evaluation below. |
 

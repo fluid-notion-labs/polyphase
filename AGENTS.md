@@ -196,7 +196,7 @@ Fixture files in `tests/fixtures/` are real 3D assets (small, hand-crafted). Par
 Current fixtures:
 - **STL:** `triangle.stl` (binary), `triangle_ascii.stl`, `quad.stl` (binary)
 - **OBJ:** `triangle.obj`, `triangle_normals.obj`, `triangle_full.obj` (normals+UVs), `quad.obj`, `two_objects.obj`
-- **GLB:** `cube.glb`
+- **GLB:** `cube.glb`, `cube_textured.glb` (materials + embedded texture + sampler), `cube_default_sampler.glb` (texture with no explicit sampler), `quad_meshopt.glb` (EXT_meshopt_compression; regenerate via `cargo run --features meshopt --example gen_meshopt_fixture`)
 - **PLY:** `triangle.ply` (ASCII, normals), `triangle_binary.ply` (binary LE, normals), `triangle_colors.ply` (ASCII, normals+vertex colors), `quad.ply` (ASCII, n-gon triangulation test)
 
 When adding a new parser or feature, add a minimal fixture that exercises it.
@@ -218,7 +218,7 @@ When adding a new parser or feature, add a minimal fixture that exercises it.
 ### Test Counts
 
 Track rough test counts here so agents know what to expect:
-- **193 tests** as of multi-asset steps 1–4 + sampler capture (159 unit incl. bevy-layer + 32 integration in `tests/pipeline.rs` + 4 doc-tests; `--features bevy` adds a few more)
+- **194 tests** as of multi-asset steps 1–4 + sampler capture + meshopt decode (both feature configs pass the same suite; the two meshopt tests swap by cfg)
 
 ## Verification
 

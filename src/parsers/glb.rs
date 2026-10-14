@@ -19,9 +19,37 @@ use crate::capabilities::{
     AlphaMode, AssetData, MaterialData, NodeData, SamplerData, TextureData, TextureMime,
     TextureSlot, TextureSource, TopologyKind,
 };
+use std::collections::HashMap;
+
+#[cfg(feature = "meshopt")]
+use meshopt::{decode_index_buffer, decode_vertex_buffer};
+
 use crate::error::GlbError;
 use crate::mesh_data::MeshData;
 use crate::parsers::stl::compute_smooth_normals;
+
+/// glTF extension for meshopt-compressed buffer views.
+const EXT_MESHOPT_COMPRESSION: &str = "EXT_meshopt_compression";
+
+/// A buffer view whose data was decompressed from `EXT_meshopt_compression`.
+struct DecodedView {
+    /// Decompressed bytes, tightly packed (`count * stride`).
+    bytes: Vec<u8>,
+    /// Decoded element stride in bytes.
+    stride: usize,
+}
+
+/// Views whose data was decompressed, keyed by buffer view index.
+type DecodedViews = HashMap<usize, DecodedView>;
+
+/// Raw GLB buffers plus any meshopt-decompressed views.
+///
+/// Accessor readers consult `decoded` first: if the accessor's buffer view
+/// was meshopt-compressed, its data lives there instead of in the raw buffer.
+struct Buffers<'a> {
+    raw: &'a [gltf::buffer::Data],
+    decoded: &'a DecodedViews,
+}
 use base64::Engine;
 
 // ---------------------------------------------------------------------------
@@ -40,12 +68,17 @@ use base64::Engine;
 /// [`GlbError::MissingPositions`] if a primitive lacks position data.
 pub fn parse(bytes: &[u8]) -> Result<Vec<MeshData>, GlbError> {
     let (document, buffers, _images) = gltf::import_slice(bytes)?;
+    let decoded = decode_meshopt_views(&document, &buffers)?;
+    let bufs = Buffers {
+        raw: &buffers,
+        decoded: &decoded,
+    };
 
     let mut meshes = Vec::new();
 
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
-            let mesh_data = extract_primitive(&primitive, &buffers, true)?;
+            let mesh_data = extract_primitive(&primitive, &bufs, true)?;
             meshes.push(mesh_data);
         }
     }
@@ -91,6 +124,11 @@ pub fn parse_asset(bytes: &[u8]) -> Result<AssetData, GlbError> {
     check_external_references(&root.document)?;
 
     let (document, buffers, _images) = gltf::import_slice(bytes)?;
+    let decoded = decode_meshopt_views(&document, &buffers)?;
+    let bufs = Buffers {
+        raw: &buffers,
+        decoded: &decoded,
+    };
 
     let textures = extract_textures(&document, &buffers)?;
     let materials = extract_materials(&document);
@@ -98,7 +136,7 @@ pub fn parse_asset(bytes: &[u8]) -> Result<AssetData, GlbError> {
     let mut meshes = Vec::new();
     for mesh in document.meshes() {
         for primitive in mesh.primitives() {
-            let mut mesh_data = extract_primitive(&primitive, &buffers, false)?;
+            let mut mesh_data = extract_primitive(&primitive, &bufs, false)?;
             mesh_data.material_index = primitive.material().index();
             meshes.push(mesh_data);
         }
@@ -128,6 +166,135 @@ pub fn parse_asset(bytes: &[u8]) -> Result<AssetData, GlbError> {
         root_nodes,
         name: None,
     })
+}
+
+/// Decompress every `EXT_meshopt_compression` buffer view.
+///
+/// Decoded data is keyed by view index; accessor readers route reads through
+/// it when the view they reference was compressed. Without the `meshopt`
+/// feature, any compressed view produces [`GlbError::MeshoptRequired`].
+fn decode_meshopt_views(
+    document: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+) -> Result<DecodedViews, GlbError> {
+    let mut decoded = DecodedViews::new();
+
+    for view in document.views() {
+        if let Some(ext) = view
+            .extensions()
+            .and_then(|e| e.get(EXT_MESHOPT_COMPRESSION))
+        {
+            decode_meshopt_view(view.index(), ext, buffers, &mut decoded)?;
+        }
+    }
+
+    Ok(decoded)
+}
+
+/// Decompress one `EXT_meshopt_compression` buffer view.
+fn decode_meshopt_view(
+    view_index: usize,
+    ext: &gltf::json::Value,
+    buffers: &[gltf::buffer::Data],
+    decoded: &mut DecodedViews,
+) -> Result<(), GlbError> {
+    let unsupported = |reason: String| GlbError::MeshoptUnsupported {
+        view: view_index,
+        reason,
+    };
+
+    let obj = ext
+        .as_object()
+        .ok_or_else(|| unsupported("extension is not an object".to_string()))?;
+    let get_u64 = |key: &str| obj.get(key).and_then(gltf::json::Value::as_u64);
+
+    let buffer_index =
+        get_u64("buffer").ok_or_else(|| unsupported("missing `buffer`".to_string()))? as usize;
+    let byte_offset = get_u64("byteOffset").unwrap_or(0) as usize;
+    let byte_length = get_u64("byteLength")
+        .ok_or_else(|| unsupported("missing `byteLength`".to_string()))?
+        as usize;
+    let count =
+        get_u64("count").ok_or_else(|| unsupported("missing `count`".to_string()))? as usize;
+
+    let buffer = buffers
+        .get(buffer_index)
+        .ok_or(GlbError::InvalidBufferView)?;
+    let compressed = buffer
+        .0
+        .get(
+            byte_offset
+                ..byte_offset
+                    .checked_add(byte_length)
+                    .ok_or_else(|| unsupported("byteOffset + byteLength overflows".to_string()))?,
+        )
+        .ok_or(GlbError::InvalidBufferView)?;
+
+    // NOTE: the `filter` field is ignored, matching the reference reader
+    // this logic was ported from (manifold's `read_glb`). Compressed data
+    // written without filters decodes exactly; filtered attributes would
+    // need filter decoding added here.
+    #[cfg(not(feature = "meshopt"))]
+    {
+        let _ = (count, compressed, decoded);
+        return Err(GlbError::MeshoptRequired { view: view_index });
+    }
+    #[cfg(feature = "meshopt")]
+    {
+        let mode = obj
+            .get("mode")
+            .and_then(gltf::json::Value::as_str)
+            .ok_or_else(|| unsupported("missing `mode`".to_string()))?;
+
+        match mode {
+            "INDICES" => {
+                let out: Vec<u32> = decode_index_buffer(compressed, count).map_err(|e| {
+                    GlbError::MeshoptDecode {
+                        view: view_index,
+                        reason: e.to_string(),
+                    }
+                })?;
+                decoded.insert(
+                    view_index,
+                    DecodedView {
+                        bytes: bytemuck::cast_slice(&out).to_vec(),
+                        stride: 4,
+                    },
+                );
+            }
+            "ATTRIBUTES" => {
+                let stride = get_u64("byteStride")
+                    .map(|s| s as usize)
+                    .ok_or_else(|| unsupported("`ATTRIBUTES` requires `byteStride`".to_string()))?;
+                let bytes: Vec<u8> = match stride {
+                    4 => typed_to_bytes(decode_vertex_buffer::<f32>(compressed, count)),
+                    8 => typed_to_bytes(decode_vertex_buffer::<[f32; 2]>(compressed, count)),
+                    12 => typed_to_bytes(decode_vertex_buffer::<[f32; 3]>(compressed, count)),
+                    16 => typed_to_bytes(decode_vertex_buffer::<[f32; 4]>(compressed, count)),
+                    other => {
+                        return Err(unsupported(format!("attribute stride {other}")));
+                    }
+                }
+                .map_err(|e| GlbError::MeshoptDecode {
+                    view: view_index,
+                    reason: e.to_string(),
+                })?;
+                decoded.insert(view_index, DecodedView { bytes, stride });
+            }
+            other => {
+                return Err(unsupported(format!("mode {other}")));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Decode meshopt vertex data and return it as tightly packed bytes.
+#[cfg(feature = "meshopt")]
+fn typed_to_bytes<T: bytemuck::Pod>(
+    result: Result<Vec<T>, meshopt::Error>,
+) -> Result<Vec<u8>, meshopt::Error> {
+    result.map(|data| bytemuck::cast_slice(&data).to_vec())
 }
 
 /// Reject glTF files that reference external files.
@@ -344,7 +511,7 @@ pub fn parse_merged(bytes: &[u8]) -> Result<MeshData, GlbError> {
 /// every representable mode to its [`TopologyKind`].
 fn extract_primitive(
     primitive: &gltf::Primitive<'_>,
-    buffers: &[gltf::buffer::Data],
+    buffers: &Buffers<'_>,
     strict: bool,
 ) -> Result<MeshData, GlbError> {
     let mode = primitive.mode();
@@ -462,23 +629,26 @@ fn finalize_indices(
 // ---------------------------------------------------------------------------
 
 /// Read a VEC3 (f32×3) accessor into `Vec<[f32; 3]>`.
-fn read_vec3_accessor(
-    accessor: &gltf::Accessor<'_>,
-    buffers: &[gltf::buffer::Data],
-) -> Vec<[f32; 3]> {
+fn read_vec3_accessor(accessor: &gltf::Accessor<'_>, buffers: &Buffers<'_>) -> Vec<[f32; 3]> {
     let view = match accessor.view() {
         Some(v) => v,
         None => return Vec::new(),
     };
-
-    let buffer = &buffers[view.buffer().index()];
-    let stride = view.stride().unwrap_or(std::mem::size_of::<[f32; 3]>());
-    let offset = view.offset() + accessor.offset();
+    let offset = accessor.offset();
     let count = accessor.count();
+
+    // meshopt-decompressed views: read from decoded bytes instead.
+    if let Some(dv) = buffers.decoded.get(&view.index()) {
+        return read_f32x::<3>(&dv.bytes, dv.stride, offset, count);
+    }
+
+    let buffer = &buffers.raw[view.buffer().index()];
+    let stride = view.stride().unwrap_or(std::mem::size_of::<[f32; 3]>());
+    let start0 = view.offset() + offset;
 
     let mut result = Vec::with_capacity(count);
     for i in 0..count {
-        let start = offset + i * stride;
+        let start = start0 + i * stride;
         if start + 12 > buffer.0.len() {
             break;
         }
@@ -505,24 +675,50 @@ fn read_vec3_accessor(
     result
 }
 
+/// Read `count` `[f32; N]` elements from bytes at `stride` intervals.
+fn read_f32x<const N: usize>(
+    bytes: &[u8],
+    stride: usize,
+    offset: usize,
+    count: usize,
+) -> Vec<[f32; N]> {
+    let mut result = Vec::with_capacity(count);
+    for i in 0..count {
+        let start = offset + i * stride;
+        if start + N * 4 > bytes.len() {
+            break;
+        }
+        let mut arr = [0.0f32; N];
+        for (j, v) in arr.iter_mut().enumerate() {
+            let b = &bytes[start + j * 4..start + j * 4 + 4];
+            *v = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        }
+        result.push(arr);
+    }
+    result
+}
+
 /// Read a VEC2 (f32×2) accessor into `Vec<[f32; 2]>`.
-fn read_vec2_accessor(
-    accessor: &gltf::Accessor<'_>,
-    buffers: &[gltf::buffer::Data],
-) -> Vec<[f32; 2]> {
+fn read_vec2_accessor(accessor: &gltf::Accessor<'_>, buffers: &Buffers<'_>) -> Vec<[f32; 2]> {
     let view = match accessor.view() {
         Some(v) => v,
         None => return Vec::new(),
     };
-
-    let buffer = &buffers[view.buffer().index()];
-    let stride = view.stride().unwrap_or(std::mem::size_of::<[f32; 2]>());
-    let offset = view.offset() + accessor.offset();
+    let offset = accessor.offset();
     let count = accessor.count();
+
+    // meshopt-decompressed views: read from decoded bytes instead.
+    if let Some(dv) = buffers.decoded.get(&view.index()) {
+        return read_f32x::<2>(&dv.bytes, dv.stride, offset, count);
+    }
+
+    let buffer = &buffers.raw[view.buffer().index()];
+    let stride = view.stride().unwrap_or(std::mem::size_of::<[f32; 2]>());
+    let start0 = view.offset() + offset;
 
     let mut result = Vec::with_capacity(count);
     for i in 0..count {
-        let start = offset + i * stride;
+        let start = start0 + i * stride;
         if start + 8 > buffer.0.len() {
             break;
         }
@@ -544,13 +740,29 @@ fn read_vec2_accessor(
 }
 
 /// Read an index accessor into `Vec<u32>`, handling u8/u16/u32 component types.
-fn read_index_accessor(accessor: &gltf::Accessor<'_>, buffers: &[gltf::buffer::Data]) -> Vec<u32> {
+fn read_index_accessor(accessor: &gltf::Accessor<'_>, buffers: &Buffers<'_>) -> Vec<u32> {
     let view = match accessor.view() {
         Some(v) => v,
         None => return Vec::new(),
     };
 
-    let buffer = &buffers[view.buffer().index()];
+    // meshopt-decompressed index views: decoded as u32, tightly packed.
+    if let Some(dv) = buffers.decoded.get(&view.index()) {
+        let offset = accessor.offset();
+        let count = accessor.count();
+        let mut result = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = offset + i * dv.stride;
+            if start + 4 > dv.bytes.len() {
+                break;
+            }
+            let b = &dv.bytes[start..start + 4];
+            result.push(u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+        }
+        return result;
+    }
+
+    let buffer = &buffers.raw[view.buffer().index()];
     let offset = view.offset() + accessor.offset();
     let count = accessor.count();
 
@@ -861,6 +1073,42 @@ mod tests {
                 wrap_s: crate::GL_WRAP_REPEAT,
                 wrap_t: crate::GL_WRAP_REPEAT,
             }
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "meshopt")]
+    fn decodes_meshopt_compressed_geometry() {
+        // quad_meshopt.glb compresses positions, normals, UVs, and indices
+        // as separate EXT_meshopt_compression buffer views.
+        let asset = parse_asset(&fixture("quad_meshopt.glb")).unwrap();
+        let mesh = &asset.meshes[0];
+
+        assert_eq!(
+            mesh.positions,
+            vec![
+                [-0.5, -0.5, 0.0],
+                [0.5, -0.5, 0.0],
+                [0.5, 0.5, 0.0],
+                [-0.5, 0.5, 0.0],
+            ]
+        );
+        assert_eq!(mesh.normals, Some(vec![[0.0, 0.0, 1.0]; 4]));
+        assert_eq!(
+            mesh.uvs,
+            Some(vec![[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]])
+        );
+        assert_eq!(mesh.indices, vec![0, 1, 2, 0, 2, 3]);
+        mesh.validate().unwrap();
+    }
+
+    #[test]
+    #[cfg(not(feature = "meshopt"))]
+    fn meshopt_compression_requires_feature() {
+        let err = parse_asset(&fixture("quad_meshopt.glb")).unwrap_err();
+        assert!(
+            matches!(err, GlbError::MeshoptRequired { .. }),
+            "got {err:?}"
         );
     }
 
