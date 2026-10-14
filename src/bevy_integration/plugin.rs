@@ -1,4 +1,4 @@
-//! Bevy plugin that registers all loadfu asset loaders.
+//! Bevy plugin that registers all polyphase asset loaders.
 //!
 //! Add [`LoadfuPlugin`] to your Bevy app to enable transparent loading of
 //! `.stl`, `.obj`, `.glb`, and `.ply` files through the asset server.
@@ -14,7 +14,7 @@ use bevy::prelude::*;
 
 use super::asset_loaders::{GlbLoader, ObjLoader, PlyLoader, StlLoader};
 
-/// Plugin that registers all loadfu asset loaders with Bevy.
+/// Plugin that registers all polyphase asset loaders with Bevy.
 ///
 /// Registers:
 /// - [`StlLoader`] for `.stl` files
@@ -26,7 +26,7 @@ use super::asset_loaders::{GlbLoader, ObjLoader, PlyLoader, StlLoader};
 ///
 /// This replaces Bevy's built-in glTF loader for `.glb` files only.
 /// Multi-file `.gltf` (with external `.bin` buffers and texture references)
-/// is **not** handled by loadfu — Bevy's native `GltfLoader` remains
+/// is **not** handled by polyphase — Bevy's native `GltfLoader` remains
 /// registered for `.gltf` and handles external URI resolution correctly.
 ///
 /// If you need Bevy's scene-level glTF support (cameras, lights, animations)

@@ -8,7 +8,7 @@
 
 use crate::capabilities::{AssetCapabilities, ParseCost, TopologyKind};
 
-/// Recognised 3D asset formats that loadfu can parse.
+/// Recognised 3D asset formats that polyphase can parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MeshFormat {
     /// STL (binary or ASCII) — triangle soup, no UVs, no materials.
@@ -33,7 +33,7 @@ impl MeshFormat {
     /// # Examples
     ///
     /// ```
-    /// use loadfu::MeshFormat;
+    /// use polyphase::MeshFormat;
     ///
     /// assert_eq!(MeshFormat::from_extension("stl"), Some(MeshFormat::Stl));
     /// assert_eq!(MeshFormat::from_extension("GLB"), Some(MeshFormat::Glb));
@@ -57,7 +57,7 @@ impl MeshFormat {
     /// # Examples
     ///
     /// ```
-    /// use loadfu::MeshFormat;
+    /// use polyphase::MeshFormat;
     /// use std::path::Path;
     ///
     /// assert_eq!(MeshFormat::from_path(Path::new("model.stl")), Some(MeshFormat::Stl));
@@ -79,7 +79,7 @@ impl MeshFormat {
     /// # Examples
     ///
     /// ```
-    /// use loadfu::MeshFormat;
+    /// use polyphase::MeshFormat;
     ///
     /// // glTF binary magic
     /// assert_eq!(MeshFormat::sniff(b"glTF..."), Some(MeshFormat::Glb));

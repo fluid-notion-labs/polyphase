@@ -1,7 +1,7 @@
 # Time-Varying Data
 
 How scientific visualization handles data that changes over time, and what
-loadfu needs to support it.
+polyphase needs to support it.
 
 ## Storage Patterns
 
@@ -20,7 +20,7 @@ frame_0003.vtu
 
 This is what seaview does today. The sequence loader discovers numbered files,
 builds a frame list, and loads them on demand through a sliding window with
-memory budgeting. loadfu parsers see individual files — no time awareness needed.
+memory budgeting. polyphase parsers see individual files — no time awareness needed.
 
 **Who uses this:** OpenFOAM (directory-per-timestep), VTK sequences, STL/OBJ/GLB
 sequences from pipeline export, most CFD post-processing workflows.
@@ -81,16 +81,16 @@ Some formats exist purely to describe a time series of other files:
 | **Ensight Case** | Text file listing geometry file + per-variable files + time step values. |
 | **OpenFOAM `system/controlDict`** | Not a manifest per se, but the directory structure (`0/`, `0.001/`, `0.002/`) _is_ the time index. |
 
-These are orchestration-layer concerns — loadfu wouldn't parse PVD files
+These are orchestration-layer concerns — polyphase wouldn't parse PVD files
 directly (that requires filesystem access, violating pure-parser contract).
-But loadfu should expose enough metadata that an orchestrator can build the
+But polyphase should expose enough metadata that an orchestrator can build the
 time index.
 
-## What loadfu Needs
+## What polyphase Needs
 
 ### Already handled (file-per-timestep)
 
-Seaview's sequence loader + loadfu's pure parsers cover this today. Each frame
+Seaview's sequence loader + polyphase's pure parsers cover this today. Each frame
 is an independent parse. No changes needed.
 
 ### Time metadata on AssetData
@@ -110,7 +110,7 @@ between non-uniform time steps.
 
 ### Multi-timestep file API
 
-For formats like Exodus/CGNS that pack all steps in one file, loadfu needs
+For formats like Exodus/CGNS that pack all steps in one file, polyphase needs
 a way to query and selectively parse:
 
 ```rust

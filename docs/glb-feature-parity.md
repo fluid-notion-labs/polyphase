@@ -1,14 +1,14 @@
 # GLB Feature Parity Roadmap
 
-**Epic:** `seaview-znf` — loadfu: full GLB feature parity (except animations)
+**Epic:** `seaview-znf` — polyphase: full GLB feature parity (except animations)
 
-**Goal:** Make loadfu produce everything GLB supports (except animations) so
-seaview can unify all env object loading through loadfu and drop the
-dual-loader architecture (loadfu for STL/OBJ/PLY + `bevy_gltf` for GLB).
+**Goal:** Make polyphase produce everything GLB supports (except animations) so
+seaview can unify all env object loading through polyphase and drop the
+dual-loader architecture (polyphase for STL/OBJ/PLY + `bevy_gltf` for GLB).
 
 ## Current State
 
-loadfu's `GlbLoader` produces `Handle<Mesh>` — geometry only. The full picture:
+polyphase's `GlbLoader` produces `Handle<Mesh>` — geometry only. The full picture:
 
 | What exists | Where | Status |
 |---|---|---|
@@ -28,11 +28,11 @@ loadfu's `GlbLoader` produces `Handle<Mesh>` — geometry only. The full picture
 
 Seaview's `environment_objects.rs` uses two code paths:
 
-- **loadfu** for STL/OBJ/PLY → `Handle<Mesh>` → `DirectMesh` variant
+- **polyphase** for STL/OBJ/PLY → `Handle<Mesh>` → `DirectMesh` variant
 - **`bevy_gltf`** for GLB → `Handle<Gltf>` → `Gltf` variant with scene spawning
 
 The `LoadedAsset` enum has both `DirectMesh` and `Gltf` variants. The `Gltf`
-path handles materials, textures, hierarchy — everything loadfu currently drops.
+path handles materials, textures, hierarchy — everything polyphase currently drops.
 
 ## Sub-tasks
 
@@ -258,11 +258,11 @@ parent-child entity hierarchy.
 
 **What:** Remove `bevy_gltf` code path from `environment_objects.rs`.
 
-**After loadfu has sub-tasks 1–7:**
+**After polyphase has sub-tasks 1–7:**
 
-1. `LoadedAsset` enum drops the `Gltf` variant — everything is loadfu
-2. `load_gltf_handle` → replaced by loadfu's `GlbLoader` (scene-level)
-3. One code path: loadfu → spawn entities with meshes + materials
+1. `LoadedAsset` enum drops the `Gltf` variant — everything is polyphase
+2. `load_gltf_handle` → replaced by polyphase's `GlbLoader` (scene-level)
+3. One code path: polyphase → spawn entities with meshes + materials
 4. `RenderAssetUsages` handled at loader level via `GlbLoaderSettings`
 5. Simplify `extract_gltf_meshes` and related plumbing
 
@@ -274,7 +274,7 @@ parent-child entity hierarchy.
 - Show material properties panel when materials are present
 - Per-format info in environment panel
 
-This is a seaview-side change, not a loadfu change. Depends on sub-tasks 1–2
+This is a seaview-side change, not a polyphase change. Depends on sub-tasks 1–2
 being done so capabilities are accurate.
 
 ## Ordering
@@ -372,8 +372,8 @@ Unit tests for new `MaterialData` fields, `TextureData`, `NodeData`,
 
 ## References
 
-- `docs/loadfu.md` — original architecture doc
-- `docs/architecture/` — loadfu architecture docs
+- `docs/polyphase.md` — original architecture doc
+- `docs/architecture/` — polyphase architecture docs
 - `src/parsers/glb.rs` — current GLB parser (geometry only)
 - `src/capabilities.rs` — `AssetData`, `MaterialData`, `AssetCapabilities`
 - `src/bevy_integration/into_mesh.rs` — current geometry-only conversion

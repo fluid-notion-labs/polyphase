@@ -3,8 +3,8 @@
 //! These tests exercise the public API across module boundaries, ensuring
 //! that parsers, validation, and capabilities work together correctly.
 
-use loadfu::parsers::{glb, obj, ply, stl};
-use loadfu::{AssetCapabilities, AssetData, MeshData, MeshFormat, ParseCost};
+use polyphase::parsers::{glb, obj, ply, stl};
+use polyphase::{AssetCapabilities, AssetData, MeshData, MeshFormat, ParseCost};
 use std::path::Path;
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -379,8 +379,8 @@ fn parse_asset_dispatches_all_formats() {
     ];
 
     for (name, format) in cases {
-        let asset =
-            loadfu::parse_asset(&fixture(name), format).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let asset = polyphase::parse_asset(&fixture(name), format)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(!asset.meshes.is_empty(), "{name}: no meshes");
         for mesh in &asset.meshes {
             mesh.validate().unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -391,7 +391,7 @@ fn parse_asset_dispatches_all_formats() {
 
 #[test]
 fn load_with_extension_hint() {
-    let data = loadfu::load(&fixture("cube.glb"), Some(Path::new("scene.glb"))).unwrap();
+    let data = polyphase::load(&fixture("cube.glb"), Some(Path::new("scene.glb"))).unwrap();
     assert_eq!(data.meshes.len(), 1);
     assert!(data.meshes[0].validate().is_ok());
 }
@@ -400,29 +400,32 @@ fn load_with_extension_hint() {
 fn load_sniffs_when_no_hint() {
     for name in ["triangle.stl", "triangle.obj", "triangle.ply", "cube.glb"] {
         let asset =
-            loadfu::load(&fixture(name), None).unwrap_or_else(|e| panic!("sniff {name}: {e}"));
+            polyphase::load(&fixture(name), None).unwrap_or_else(|e| panic!("sniff {name}: {e}"));
         assert!(!asset.meshes.is_empty(), "sniff {name}: no meshes");
     }
 }
 
 #[test]
 fn load_unrecognized_bytes_error() {
-    let err = loadfu::load(b"{}", Some(Path::new("thing.gltf"))).unwrap_err();
+    let err = polyphase::load(b"{}", Some(Path::new("thing.gltf"))).unwrap_err();
     assert!(
-        matches!(err, loadfu::LoadError::Glb(_)),
+        matches!(err, polyphase::LoadError::Glb(_)),
         "glTF text with no data: {err}"
     );
 
-    let err = loadfu::load(b"not a mesh at all", None).unwrap_err();
+    let err = polyphase::load(b"not a mesh at all", None).unwrap_err();
     assert!(
-        matches!(err, loadfu::LoadError::UnsupportedFormat { detected: None }),
+        matches!(
+            err,
+            polyphase::LoadError::UnsupportedFormat { detected: None }
+        ),
         "got {err}"
     );
 }
 
 #[test]
 fn glb_parse_asset_full_pipeline() {
-    let asset = loadfu::parse_asset(&fixture("cube_textured.glb"), MeshFormat::Glb).unwrap();
+    let asset = polyphase::parse_asset(&fixture("cube_textured.glb"), MeshFormat::Glb).unwrap();
 
     // Round-trip: validate every mesh, then derive capabilities.
     for mesh in &asset.meshes {
@@ -441,14 +444,15 @@ fn glb_parse_asset_full_pipeline() {
 
 #[test]
 fn obj_parse_asset_full_pipeline() {
-    use loadfu::parsers::obj::ObjOptions;
+    use polyphase::parsers::obj::ObjOptions;
 
     let options = ObjOptions {
         mtl: Some(fixture("two_objects.mtl")),
         ..Default::default()
     };
     let asset =
-        loadfu::parsers::obj::parse_asset(&fixture("two_objects_textured.obj"), &options).unwrap();
+        polyphase::parsers::obj::parse_asset(&fixture("two_objects_textured.obj"), &options)
+            .unwrap();
 
     for mesh in &asset.meshes {
         mesh.validate().unwrap();
@@ -462,7 +466,7 @@ fn obj_parse_asset_full_pipeline() {
     assert_eq!(asset.meshes[1].material_index, Some(1));
     assert!(matches!(
         asset.textures[0].source,
-        loadfu::TextureSource::Uri(_)
+        polyphase::TextureSource::Uri(_)
     ));
 }
 

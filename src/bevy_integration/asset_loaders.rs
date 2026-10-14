@@ -6,7 +6,7 @@
 //! 3. Converts `MeshData` → `bevy::Mesh` via the `From` impl
 //!
 //! All parsing logic lives in the core layer — these wrappers just bridge
-//! the Bevy asset pipeline to loadfu's pure parsers.
+//! the Bevy asset pipeline to polyphase's pure parsers.
 
 use bevy::asset::io::Reader;
 use bevy::asset::{AssetLoader, LoadContext};
@@ -167,7 +167,7 @@ impl Default for GlbLoaderSettings {
 /// **Note:** This loader handles `.glb` only (self-contained binary).
 /// Multi-file `.gltf` (with external `.bin` buffers and texture references)
 /// must go through Bevy's native `GltfLoader` which can resolve external
-/// URIs.  loadfu's byte-slice parser cannot resolve external references.
+/// URIs.  polyphase's byte-slice parser cannot resolve external references.
 #[derive(Default, Debug, Clone, Copy, bevy::reflect::TypePath)]
 pub struct GlbLoader;
 

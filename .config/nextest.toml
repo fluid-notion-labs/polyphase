@@ -1,4 +1,4 @@
-# cargo-nextest configuration for loadfu
+# cargo-nextest configuration for polyphase
 # https://nexte.st/docs/configuration/
 
 [profile.default]

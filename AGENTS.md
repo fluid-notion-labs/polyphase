@@ -4,18 +4,18 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 
 ## Project
 
-**loadfu** — format-agnostic 3D asset loading. Single crate, Bevy behind a feature flag. Core is useful standalone (CLI tools, pipeline).
+**polyphase** — format-agnostic 3D asset loading. Single crate, Bevy behind a feature flag. Core is useful standalone (CLI tools, pipeline).
 
 ## Architecture
 
-**Read [`docs/loadfu.md`](docs/loadfu.md) for the full design doc.** Key rules:
+**Read [`docs/polyphase.md`](docs/polyphase.md) for the full design doc.** Key rules:
 
 - **Core layer** (`src/`) = pure logic. No Bevy dependency. Parsers take `&[u8]` and return `Result<MeshData>`.
 - **Bevy layer** (`src/bevy/`) = `#[cfg(feature = "bevy")]` only. Thin `AssetLoader` wrappers that delegate to core parsers. `Into<bevy::Mesh>` for `MeshData`.
 - **Reference code** (`ref/`) = extracted from seaview. Read-only context for extraction, not part of the crate build.
 - **Parsers are pure functions.** `&[u8] → Result<MeshData>`. No IO, no filesystem, no Bevy types.
 - **`MeshData` is the universal intermediate.** Every parser produces it, every consumer (Bevy, CLI, pipeline) reads from it.
-- **Feature flag is the boundary.** `cargo check -p loadfu` must succeed with zero Bevy dependency. `cargo check -p loadfu --features bevy` adds the integration layer.
+- **Feature flag is the boundary.** `cargo check -p polyphase` must succeed with zero Bevy dependency. `cargo check -p polyphase --features bevy` adds the integration layer.
 - **File size signals.** Parsers >300 lines → split into submodules. Bevy wrappers should be thin (<100 lines each).
 - **Idiomatic patterns.** Use idiomatic APIs from dependency crates (e.g. `thiserror` derives instead of hand-rolled `Display`/`Error` impls). Don't reinvent what a dependency already provides. Keep the macro/crate footprint lean — only add a derive crate if it genuinely reduces boilerplate at our scale.
 - **Dependencies.** Read [`docs/architecture/dependencies.md`](docs/architecture/dependencies.md) for full rationale. Summary rules:
@@ -108,18 +108,18 @@ bd sync                        # beads reads git state — works because colocat
 **Always start here:**
 
 ```bash
-bd show loadfu-n7x   # Load session context — architecture, state, what to do next
+bd show polyphase-n7x   # Load session context — architecture, state, what to do next
 bd ready              # See available work
 ```
 
-Issue **loadfu-n7x** is the living session context. It is always open (P0) and contains the full project state, architecture overview, open issues, and handoff notes from the last session. **Read it first.**
+Issue **polyphase-n7x** is the living session context. It is always open (P0) and contains the full project state, architecture overview, open issues, and handoff notes from the last session. **Read it first.**
 
 ## `!lc` Command
 
-When the user says **`!lc`**, check issue loadfu-n7x:
+When the user says **`!lc`**, check issue polyphase-n7x:
 
 ```bash
-bd show loadfu-n7x
+bd show polyphase-n7x
 ```
 
 ## `!lcc` Command
@@ -128,10 +128,10 @@ bd show loadfu-n7x
 
 ## `!sc` Command
 
-When the user says **`!sc`**, update loadfu-n7x's notes with the current session state:
+When the user says **`!sc`**, update polyphase-n7x's notes with the current session state:
 
 ```bash
-bd update loadfu-n7x --notes "## Session Context (DATE)
+bd update polyphase-n7x --notes "## Session Context (DATE)
 ### Change: <jj change id or description>
 ### What was done ...
 ### Architecture ...
@@ -143,7 +143,7 @@ bd update loadfu-n7x --notes "## Session Context (DATE)
 ## Quick Reference
 
 ```bash
-bd show loadfu-n7x    # Session context (read first!)
+bd show polyphase-n7x    # Session context (read first!)
 bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --status in_progress  # Claim work
@@ -155,7 +155,7 @@ bd sync               # Sync with git
 
 | File | Purpose |
 |---|---|
-| `docs/loadfu.md` | Design doc — crate structure, types, extraction plan |
+| `docs/polyphase.md` | Design doc — crate structure, types, extraction plan |
 | `ref/asset_loaders/stl_loader.rs` | Source for STL parser extraction |
 | `ref/asset_loaders/obj_loader.rs` | Source for OBJ parser extraction |
 | `ref/bin/debug_loader.rs` | GLB parsing seed code (`parse_glb_stats`) |
@@ -170,9 +170,9 @@ bd sync               # Sync with git
 We use **cargo-nextest** for fast, parallel test execution. Config lives in `.config/nextest.toml`.
 
 ```bash
-cargo nextest run -p loadfu          # Run all tests (default profile)
-cargo nextest run -p loadfu -E 'test(stl)'  # Filter by name
-cargo nextest run -p loadfu --profile ci     # CI profile (quiet, failures only)
+cargo nextest run -p polyphase          # Run all tests (default profile)
+cargo nextest run -p polyphase -E 'test(stl)'  # Filter by name
+cargo nextest run -p polyphase --profile ci     # CI profile (quiet, failures only)
 ```
 
 ### Test Layout
@@ -226,13 +226,13 @@ After any code changes, run:
 
 ```bash
 # Core compiles without Bevy
-cargo check -p loadfu
+cargo check -p polyphase
 
 # Bevy feature compiles
-cargo check -p loadfu --features bevy
+cargo check -p polyphase --features bevy
 
 # Tests pass (nextest: hierarchical, colored, parallel)
-cargo nextest run -p loadfu
+cargo nextest run -p polyphase
 ```
 
 ## Landing the Plane (Session Completion)
@@ -244,9 +244,9 @@ cargo nextest run -p loadfu
 1. **File issues for remaining work** — Create issues for anything that needs follow-up
 2. **Run quality gates** (if code changed):
    ```bash
-   cargo check -p loadfu
-   cargo check -p loadfu --features bevy
-   cargo nextest run -p loadfu
+   cargo check -p polyphase
+   cargo check -p polyphase --features bevy
+   cargo nextest run -p polyphase
    ```
 3. **Update issue status** — Close finished work, update in-progress items
 4. **Describe and push changes** — This is MANDATORY:

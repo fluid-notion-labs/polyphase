@@ -1,4 +1,4 @@
-//! Bevy integration layer for loadfu.
+//! Bevy integration layer for polyphase.
 //!
 //! This module is gated behind `#[cfg(feature = "bevy")]` and provides:
 //!
@@ -10,7 +10,7 @@
 //! # Usage
 //!
 //! ```ignore
-//! use loadfu::bevy_integration::LoadfuPlugin;
+//! use polyphase::bevy_integration::LoadfuPlugin;
 //!
 //! app.add_plugins(LoadfuPlugin);
 //!

@@ -7,7 +7,7 @@
 use crate::capabilities::TopologyKind;
 use thiserror::Error;
 
-/// Format-agnostic mesh data produced by all loadfu parsers.
+/// Format-agnostic mesh data produced by all polyphase parsers.
 ///
 /// Every parser (`stl`, `obj`, `glb`) returns `Result<MeshData>`. Consumers
 /// convert from `MeshData` into their target representation (e.g.

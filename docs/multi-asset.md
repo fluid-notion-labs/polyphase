@@ -1,12 +1,12 @@
 # Multi-Asset Implementation Playbook
 
-**Purpose:** the working guide for making loadfu multi-asset aware — how to
+**Purpose:** the working guide for making polyphase multi-asset aware — how to
 add textures, materials, hierarchy, and new formats to this crate, following
 its own conventions. Written for implementers working *in this repo*.
 
 **Companion analysis:** the full validation of the plans (what holds up,
 gaps G1–G7, reasoning) lives in the manifold repo at
-`manifold/research/architecture/loadfu-multi-asset.md` — read that for
+`manifold/research/architecture/polyphase-multi-asset.md` — read that for
 *why*, this for *how*.
 
 **Current state at time of writing** (`c90bad8`, 157 tests):
@@ -30,7 +30,7 @@ GLB parser reads UV set 0 and drops `_images` on the floor.
 | Per-mesh material link | ✅ `MeshData::material_index`, bound per primitive | `parsers/glb.rs` |
 | **Samplers** | ✅ resolved inline on each `TextureSlot` (`image`, `tex_coord`, `sampler: SamplerData`); GL enum consts exported | `capabilities.rs` |
 | **meshopt-compressed GLB** | ✅ behind the `meshopt` feature (positions/normals/UVs/indices decode; compression filters ignored, like the reference reader); without it: clear `MeshoptRequired` error | `parsers/glb.rs`, `examples/gen_meshopt_fixture.rs` |
-| VTK | 🔒 `vtk` feature, parser not yet written (`loadfu-cnj`) | `Cargo.toml`, `ref/vtk_samples/` |
+| VTK | 🔒 `vtk` feature, parser not yet written (`polyphase-cnj`) | `Cargo.toml`, `ref/vtk_samples/` |
 
 So: **UVs are done.** The work is textures → materials → hierarchy →
 multi-object OBJ, in that order.
@@ -40,13 +40,13 @@ multi-object OBJ, in that order.
 ## Part B — Implementation steps (in order)
 
 Each step is independently committable and keeps the suite green.
-After every step: `cargo check -p loadfu`, `cargo check -p loadfu --features bevy`,
-`cargo nextest run -p loadfu --features bevy`.
+After every step: `cargo check -p polyphase`, `cargo check -p polyphase --features bevy`,
+`cargo nextest run -p polyphase --features bevy`.
 
 > **Status (2026-10):** Steps 1–4 are implemented on `main` — `AlphaMode`/
 > `TextureData`/`NodeData`, `MaterialData` extension, `MeshData::material_index`,
 > `glb::parse_asset`, `obj::parse_asset` (with in-memory MTL), `MeshFormat::sniff`,
-> `loadfu::parse_asset`/`load`. Step 5 (Bevy layer) and Step 6 are still open.
+> `polyphase::parse_asset`/`load`. Step 5 (Bevy layer) and Step 6 are still open.
 > New fixtures: `cube_textured.glb`, `cube_hierarchy.glb`, `cube_lines.glb`,
 > `gltf_external.gltf`, `two_objects.mtl`, `two_objects_textured.obj`.
 
@@ -241,10 +241,10 @@ not the files), `load()` end-to-end per format, round-trip
 
 ### Step 6 — Afterwards / parallel queue
 
-- `loadfu-jql` FieldArray — per-vertex named data; design it against the
+- `polyphase-jql` FieldArray — per-vertex named data; design it against the
   extended `AssetData` so per-asset metadata has a home.
-- `loadfu-cnj` VTK parser — becomes just another `parse_asset` behind `vtk`.
-- `loadfu-gj7` LineStrip — fold into the G1 topology mapping when doing Step 2.
+- `polyphase-cnj` VTK parser — becomes just another `parse_asset` behind `vtk`.
+- `polyphase-gj7` LineStrip — fold into the G1 topology mapping when doing Step 2.
 
 ---
 
@@ -294,19 +294,19 @@ feature (e.g. `image`) — discuss in `dependencies.md` first.
 ## Part D — Consumer rewiring (after Steps 1–4)
 
 - **manifold** (pipeline, core-only): `src/io/mod.rs::load_mesh()` becomes
-  `loadfu::load()` + a `MeshData → manifold::mesh::Mesh` converter in its
+  `polyphase::load()` + a `MeshData → manifold::mesh::Mesh` converter in its
   existing `convert.rs` style; its own GLB texture/material extraction
   (`read_glb_texture_material`) retires in favor of `AssetData`.
-  Vendored copy lives at `manifold/vendor/loadfu` — **re-vendor after
+  Vendored copy lives at `manifold/vendor/polyphase` — **re-vendor after
   landing here** (snapshot, no `.git`), then rewire.
 - **seaview** (bevy feature): after Step 5, single loader path, no
   `bevy_gltf` — see `glb-feature-parity.md` §8–9.
 
 ## Landing checklist (per step)
 
-- [ ] `cargo check -p loadfu` clean
-- [ ] `cargo check -p loadfu --features bevy` clean
-- [ ] `cargo nextest run -p loadfu --features bevy` green
+- [ ] `cargo check -p polyphase` clean
+- [ ] `cargo check -p polyphase --features bevy` clean
+- [ ] `cargo nextest run -p polyphase --features bevy` green
 - [ ] New fixtures added for new input shapes
 - [ ] `docs/architecture/dependencies.md` updated iff a crate was added
-- [ ] `bd update loadfu-n7x --notes …` at session end, `jj describe` + push
+- [ ] `bd update polyphase-n7x --notes …` at session end, `jj describe` + push

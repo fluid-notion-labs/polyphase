@@ -1,11 +1,11 @@
 # Writer Support — Design Plan
 
 **Status:** Planned (not started)
-**Companion:** `docs/loadfu.md` (reader design), `docs/multi-asset.md` (multi-asset plan, mostly implemented)
+**Companion:** `docs/polyphase.md` (reader design), `docs/multi-asset.md` (multi-asset plan, mostly implemented)
 
 ## Goal
 
-Make loadfu a complete asset I/O crate: **load and save faces/vertices across
+Make polyphase a complete asset I/O crate: **load and save faces/vertices across
 formats**. Writers are the inverse of parsers — same purity rules, same
 architecture, mirrored direction:
 
@@ -26,7 +26,7 @@ architecture, mirrored direction:
   first material + base-color texture through a rewrite). `AssetData`
   expresses the same information more completely.
 - The "re-enable meshopt compression" question resolves naturally: it gets
-  implemented in loadfu's writer, once, and manifold's compression question
+  implemented in polyphase's writer, once, and manifold's compression question
   disappears.
 
 ## API sketch
@@ -100,11 +100,11 @@ fixture -> parse_asset -> write_<fmt> -> parse_asset -> compare AssetData
 
 ## Migration in manifold (after landing)
 
-1. `write_glb*` become wrappers over loadfu writers (same signatures,
+1. `write_glb*` become wrappers over polyphase writers (same signatures,
    gradually delegating).
 2. `GlbTextureMaterial` retires once callers pass `AssetData` (or a
    `MaterialBundle` extracted from it) through the pipeline.
-3. `write_stl` wraps loadfu's STL writer.
+3. `write_stl` wraps polyphase's STL writer.
 4. The open "re-enable meshopt compression in manifold" item is closed by
    this work instead.
 

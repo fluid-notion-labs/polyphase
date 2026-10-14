@@ -1,6 +1,6 @@
 # OpenVDB Research
 
-Research notes for OpenVDB support in loadfu. Evaluates the `vdb-rs` crate,
+Research notes for OpenVDB support in polyphase. Evaluates the `vdb-rs` crate,
 the OpenVDB data model, and how volumetric data fits into a surface-mesh
 rendering pipeline.
 
@@ -35,11 +35,11 @@ a large domain).
 
 Typical file sizes: 10 MB – 10 GB per frame for production fluid sims.
 
-## The VDB Data Model vs loadfu's MeshData
+## The VDB Data Model vs polyphase's MeshData
 
 VDB and MeshData solve fundamentally different problems:
 
-| Aspect | OpenVDB | loadfu MeshData |
+| Aspect | OpenVDB | polyphase MeshData |
 |--------|---------|-----------------|
 | **Representation** | Sparse voxel grid (implicit surface) | Explicit triangle mesh |
 | **Surface definition** | SDF zero-crossing (continuous) | Triangle soup (discrete) |
@@ -94,7 +94,7 @@ has architectural implications:
 
 1. **Not suitable for frame-rate loading.** A 500-frame VDB sequence cannot
    be extracted in real time. Pre-extraction to STL/PLY is the pragmatic path.
-2. **Batch pre-processing tool.** loadfu could provide a CLI or library API:
+2. **Batch pre-processing tool.** polyphase could provide a CLI or library API:
    `vdb_to_mesh(grid, isovalue) → MeshData`. Run offline, write STL/PLY/svmesh.
 3. **Single-frame env objects.** Loading one VDB as an environment object
    (terrain SDF, static obstacle) is feasible — extract once at load time.
@@ -179,13 +179,13 @@ but exotic grid types or very old VDB versions may not.
 FluidX3D exports surface meshes directly as **binary STL** files. The marching
 cubes isosurface extraction happens inside FluidX3D (on GPU via OpenCL), and
 the output is already a triangle mesh. Seaview loads these STL frames through
-loadfu.
+polyphase.
 
 ```
 FluidX3D (GPU)
   → marching cubes (OpenCL kernel)
   → STL export (surface_export.hpp)
-  → seaview/loadfu: STL → MeshData → Bevy Mesh
+  → seaview/polyphase: STL → MeshData → Bevy Mesh
 ```
 
 **VDB is not in this pipeline today.** FluidX3D doesn't export VDB files.
@@ -193,7 +193,7 @@ FluidX3D (GPU)
 ### Where VDB would matter
 
 1. **Houdini / EmberGen integration.** If the fluid sim pipeline moves to
-   Houdini or other tools that output VDB natively, loadfu would need to
+   Houdini or other tools that output VDB natively, polyphase would need to
    extract surfaces from VDB level sets.
 
 2. **Volume rendering.** Displaying fog volumes, fire, smoke — these don't
@@ -235,7 +235,7 @@ relevant, the path is:
 | **Pipeline fit** | Direct: parse → MeshData | Indirect: parse → extract → MeshData |
 | **CFD relevance** | Universal interchange (OpenFOAM, ParaView, etc.) | Fluid sim volumes (Houdini, EmberGen) |
 | **Rust crate** | `vtkio` 0.6.3 (mature, 7.5K LOC) | `vdb-rs` 0.6.0 (early, 915 LOC) |
-| **loadfu priority** | P1 (in progress) | P3–P4 |
+| **polyphase priority** | P1 (in progress) | P3–P4 |
 | **Extraction cost** | Cheap (read + triangulate polygons) | Expensive (marching cubes on SDF) |
 | **Time series** | File-per-step (seaview's model) | File-per-step (same model) |
 

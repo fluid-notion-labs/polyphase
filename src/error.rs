@@ -1,4 +1,4 @@
-//! Error types for loadfu parsers.
+//! Error types for polyphase parsers.
 //!
 //! Each format has its own error type wrapping the underlying parsing library's
 //! errors. [`LoadError`] is the top-level enum that unifies them all.
@@ -112,7 +112,7 @@ pub enum GlbError {
     /// The file uses `EXT_meshopt_compression` but the `meshopt` feature is
     /// not enabled. Rebuild with `--features meshopt`.
     #[error(
-        "GLB uses EXT_meshopt_compression (buffer view {view}); rebuild loadfu with the `meshopt` feature"
+        "GLB uses EXT_meshopt_compression (buffer view {view}); rebuild polyphase with the `meshopt` feature"
     )]
     MeshoptRequired {
         /// Index of the first compressed buffer view.
@@ -144,7 +144,7 @@ pub enum GlbError {
 // Top-level error
 // ---------------------------------------------------------------------------
 
-/// Unified error type for all loadfu operations.
+/// Unified error type for all polyphase operations.
 ///
 /// Wraps the per-format error variants so callers can match on the format
 /// or just treat it as a generic load failure.

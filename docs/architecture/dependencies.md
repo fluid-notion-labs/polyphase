@@ -1,12 +1,12 @@
 # Dependency Guidelines
 
-Rules and rationale for loadfu's dependency choices. Read this before adding a crate.
+Rules and rationale for polyphase's dependency choices. Read this before adding a crate.
 
 ## Rules for Adding Dependencies
 
 1. **Justify the weight.** Every new dep adds compile time, audit surface, and version churn. A crate must save significant code or provide correctness guarantees we can't easily match.
 2. **Prefer zero-dep leaf crates.** A crate with no transitive deps (like `mint`) is almost free. A crate pulling in `nalgebra` or `syn` is not.
-3. **Feature-gate optional integrations.** If a dep is only needed for interop (e.g. `mint`, `bevy`), put it behind a feature flag. Core `cargo check -p loadfu` must stay lean.
+3. **Feature-gate optional integrations.** If a dep is only needed for interop (e.g. `mint`, `bevy`), put it behind a feature flag. Core `cargo check -p polyphase` must stay lean.
 4. **Pin to compatible ranges.** Use `"1"` not `"1.25.0"` — let the resolver pick. Exception: Bevy, which has breaking changes every minor version.
 5. **Document the choice.** When adding a dep, update this file with a row in the table and a sentence on why.
 6. **Update AGENTS.md if it changes architecture rules.** New dep categories (e.g. async runtime) get a bullet in the Architecture section.
@@ -54,7 +54,7 @@ Rules and rationale for loadfu's dependency choices. Read this before adding a c
 | Crate | Downloads | What it does | Verdict |
 |-------|-----------|-------------|---------|
 | **meshx** 0.7 | 194K | Mesh exchange/conversion. Deps: nalgebra, dync, flatk, ahash, ordered-float. Science/sim oriented. | ❌ Too heavy. nalgebra dep tree alone disqualifies it for a loading crate. |
-| **meshopt** 0.6 | 311K | FFI to meshoptimizer (vertex cache opt, simplification, overdraw). Processing, not data model. | ❌ Pipeline tool — useful for seaview-pipeline, not for loadfu's loading job. |
+| **meshopt** 0.6 | 311K | FFI to meshoptimizer (vertex cache opt, simplification, overdraw). Processing, not data model. | ❌ Pipeline tool — useful for seaview-pipeline, not for polyphase's loading job. |
 | **plexus** 0.0.11 | 22K | Half-edge mesh topology. Last updated 2019. | ❌ Dead. Wrong abstraction — we need flat triangle lists, not topology traversal. |
 | **genmesh** 0.6 | 545K | Mesh generation, gfx-rs ecosystem. Last updated 2018. | ❌ Dead. |
 

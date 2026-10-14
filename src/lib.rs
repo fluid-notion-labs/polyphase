@@ -1,4 +1,4 @@
-//! **loadfu** — format-agnostic 3D asset loading.
+//! **polyphase** — format-agnostic 3D asset loading.
 //!
 //! Single crate, Bevy behind a feature flag. Core is useful standalone
 //! (CLI tools, pipeline scripts) without pulling in any engine dependency.
@@ -17,13 +17,13 @@
 //! |-------|--------|
 //! | `bevy` | Enables `bevy/` integration layer (asset loaders, `Into<Mesh>`). |
 //!
-//! Default features: *none*. `cargo check -p loadfu` compiles with zero Bevy
+//! Default features: *none*. `cargo check -p polyphase` compiles with zero Bevy
 //! dependency.
 //!
 //! # Quick start (core only)
 //!
 //! ```rust
-//! use loadfu::{MeshData, MeshFormat};
+//! use polyphase::{MeshData, MeshFormat};
 //!
 //! // Detect format from extension
 //! let format = MeshFormat::from_extension("stl").unwrap();

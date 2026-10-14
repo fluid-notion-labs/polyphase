@@ -1,7 +1,7 @@
 [workspace]
 
 [package]
-name = "loadfu"
+name = "polyphase"
 version = "0.1.0"
 edition = "2021"
 description = "Format-agnostic 3D asset loading. Single crate, Bevy behind a feature flag."

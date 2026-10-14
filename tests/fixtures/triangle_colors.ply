@@ -1,6 +1,6 @@
 ply
 format ascii 1.0
-comment Triangle with vertex colors for loadfu tests
+comment Triangle with vertex colors for polyphase tests
 element vertex 3
 property float x
 property float y

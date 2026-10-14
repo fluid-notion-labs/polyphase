@@ -1,4 +1,4 @@
-# loadfu — 3D Asset Loader for Bevy
+# polyphase — 3D Asset Loader for Bevy
 
 Format-agnostic 3D asset loading. Single assets, sequences, throttled batch loading.
 
@@ -6,7 +6,7 @@ Format-agnostic 3D asset loading. Single assets, sequences, throttled batch load
 
 ## What It Is
 
-A Bevy ecosystem crate that abstracts mesh loading across formats (STL, OBJ, GLB, future mmap format). Orthogonal to `svmesh` (the custom zero-copy format from [mmap_loader_architecture.md](../../../docs/research/mmap_loader_architecture.md)) — svmesh is one format loadfu would support.
+A Bevy ecosystem crate that abstracts mesh loading across formats (STL, OBJ, GLB, future mmap format). Orthogonal to `svmesh` (the custom zero-copy format from [mmap_loader_architecture.md](../../../docs/research/mmap_loader_architecture.md)) — svmesh is one format polyphase would support.
 
 **Not** a Bevy fork or patch. A companion crate that works with `Assets<Mesh>` and `AssetServer`.
 
@@ -21,7 +21,7 @@ A Bevy ecosystem crate that abstracts mesh loading across formats (STL, OBJ, GLB
 Single crate, Bevy behind a feature flag. Core is useful standalone (CLI tools, pipeline).
 
 ```text
-crates/loadfu/
+crates/polyphase/
   Cargo.toml
   src/
     lib.rs              # Public API, feature gates
@@ -46,7 +46,7 @@ crates/loadfu/
 
 ```toml
 [package]
-name = "loadfu"
+name = "polyphase"
 version = "0.1.0"
 edition = "2021"
 
@@ -70,15 +70,15 @@ bevy = ["dep:bevy"]
 
 ```toml
 # Seaview app — full Bevy integration
-loadfu = { path = "../loadfu", features = ["bevy"] }
+polyphase = { path = "../polyphase", features = ["bevy"] }
 
 # CLI tool — just parsing
-loadfu = { path = "../loadfu" }
+polyphase = { path = "../polyphase" }
 ```
 
 ## Extraction From Seaview
 
-### What moves to loadfu
+### What moves to polyphase
 
 | Current location | Becomes |
 |---|---|
@@ -95,7 +95,7 @@ loadfu = { path = "../loadfu" }
 | `sequence/loader/` (queue, tracker, frame_window, assets) | Seaview-specific orchestration (timeline, memory budget, sections) |
 | `sequence/discovery.rs`, `playback.rs`, `watch.rs` | Domain logic |
 | `memory_budget.rs` | Seaview-specific |
-| `FrameStore`, `LoaderConfig`, `AssetIndex` | Seaview resources that *use* loadfu |
+| `FrameStore`, `LoaderConfig`, `AssetIndex` | Seaview resources that *use* polyphase |
 
 ### Seed code for GLB parser
 
@@ -120,7 +120,7 @@ loadfu = { path = "../loadfu" }
 
 ### The boundary
 
-Seaview's `drain_load_queue` currently calls `load_direct_mesh_handle` / `load_gltf_handle` directly. After extraction, it calls loadfu's API instead. Everything upstream (queue management, section reconciliation, frame window) stays in seaview.
+Seaview's `drain_load_queue` currently calls `load_direct_mesh_handle` / `load_gltf_handle` directly. After extraction, it calls polyphase's API instead. Everything upstream (queue management, section reconciliation, frame window) stays in seaview.
 
 ## Key Types
 
@@ -150,7 +150,7 @@ pub struct AssetData {
     pub materials: Vec<MaterialData>,  // from GLB PBR, OBJ MTL, etc.
 }
 
-/// What loadfu knows about a loaded asset.
+/// What polyphase knows about a loaded asset.
 /// Two tiers: pre-parse (from format/header) and post-parse (from data).
 pub struct AssetCapabilities {
     // Geometry
@@ -206,18 +206,18 @@ See [mesh_loading_ecosystem.md](../../../docs/research/mesh_loading_ecosystem.md
 
 The trait boundary (`AssetData`) has room for future classes — fields get added, parsers opt in. Don't over-engineer for them now, but don't design them out either.
 
-**Note:** `seaview-pipeline` already exists upstream of loadfu. It ingests raw sim output (.stl triangle soup), runs analysis, simplifies geometry, and outputs indexed .glb files. loadfu doesn't need to absorb scientific/volumetric formats — it loads what the pipeline produces. The boundary is: pipeline does the heavy conversion/analysis, loadfu does the fast ingest.
+**Note:** `seaview-pipeline` already exists upstream of polyphase. It ingests raw sim output (.stl triangle soup), runs analysis, simplifies geometry, and outputs indexed .glb files. polyphase doesn't need to absorb scientific/volumetric formats — it loads what the pipeline produces. The boundary is: pipeline does the heavy conversion/analysis, polyphase does the fast ingest.
 
 ```text
 seaview-pipeline:  .stl triangle soup → analysis → simplification → indexed .glb
-loadfu:            .glb / .stl / .obj / ... → MeshData → Bevy
+polyphase:            .glb / .stl / .obj / ... → MeshData → Bevy
 ```
 
 Full integration awareness TBD — will bring in pipeline context at a later point.
 
 ## Upstream Path
 
-1. Workspace member in seaview (`crates/loadfu/`)
+1. Workspace member in seaview (`crates/polyphase/`)
 2. Publish to crates.io when API stabilizes
 3. Propose to Bevy org — name fits their style (`bevy_mesh_io` or similar rename at that point)
 
@@ -225,12 +225,12 @@ Feature flag keeps the split clean: core parsers have no engine dependency, Bevy
 
 ## Agentic Refactoring Skill
 
-When an agent is tasked with extracting loadfu from seaview, use this plan. Reference the research docs for design rationale — don't re-derive.
+When an agent is tasked with extracting polyphase from seaview, use this plan. Reference the research docs for design rationale — don't re-derive.
 
 ### Context files to read first
 
 ```
-docs/research/loadfu.md                          # This doc — architecture
+docs/research/polyphase.md                          # This doc — architecture
 docs/research/mesh_loading_ecosystem.md          # MeshSource trait, capabilities
 docs/research/mesh-loading-bypass.md             # Direct loader design
 crates/seaview/src/lib/asset_loaders/mod.rs      # Current plugin registration
@@ -243,26 +243,26 @@ crates/seaview/src/lib/sequence/loader/load_queue.rs  # drain_load_queue (consum
 
 ### Steps
 
-1. **Create `crates/loadfu/`** — Cargo.toml, src/lib.rs, module skeleton
+1. **Create `crates/polyphase/`** — Cargo.toml, src/lib.rs, module skeleton
 2. **Extract parsers** — Move STL/OBJ parsing logic (the pure `build_mesh_*` functions) into `parsers/stl.rs`, `parsers/obj.rs`. These take `&[u8]` → `Result<MeshData>`. No Bevy.
 3. **Extract `MeshFormat`** — Move from `loader/assets.rs` into `format.rs`. Rename `MeshFileFormat` → `MeshFormat`.
 4. **Create `MeshData`** — The intermediate representation. Add `Into<bevy::Mesh>` behind `#[cfg(feature = "bevy")]`.
 5. **Wrap in AssetLoaders** — Under `bevy/asset_loaders.rs`, create `StlLoader` and `ObjLoader` that delegate to parsers. These replace seaview's versions.
 6. **Create `LoadfuPlugin`** — Registers the asset loaders. Replaces seaview's `AssetLoadersPlugin`.
-7. **Wire seaview** — Add `loadfu = { path = "../loadfu", features = ["bevy"] }` to seaview's Cargo.toml. Replace `use crate::lib::asset_loaders::*` with `use loadfu::*`. Update `drain_load_queue` to use loadfu's format enum.
+7. **Wire seaview** — Add `polyphase = { path = "../polyphase", features = ["bevy"] }` to seaview's Cargo.toml. Replace `use crate::lib::asset_loaders::*` with `use polyphase::*`. Update `drain_load_queue` to use polyphase's format enum.
 8. **Delete `lib/asset_loaders/`** from seaview.
-9. **Test** — `cargo test -p loadfu`, `cargo test -p seaview`, `cargo build --release`.
+9. **Test** — `cargo test -p polyphase`, `cargo test -p seaview`, `cargo build --release`.
 
 ### Verification
 
 ```bash
 # Core compiles without bevy
-cargo check -p loadfu
+cargo check -p polyphase
 # Bevy feature compiles
-cargo check -p loadfu --features bevy
+cargo check -p polyphase --features bevy
 # Seaview still builds
 cargo build -p seaview
 # Tests pass
-cargo test -p loadfu
+cargo test -p polyphase
 cargo test -p seaview
 ```

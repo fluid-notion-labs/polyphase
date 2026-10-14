@@ -359,7 +359,7 @@ impl NodeData {
 // AssetCapabilities
 // ---------------------------------------------------------------------------
 
-/// What loadfu knows (or can infer) about an asset.
+/// What polyphase knows (or can infer) about an asset.
 ///
 /// Two tiers:
 /// - **Static:** from [`MeshFormat::static_capabilities`](crate::MeshFormat::static_capabilities)

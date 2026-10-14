@@ -1,6 +1,6 @@
 ply
 format ascii 1.0
-comment Quad fixture for loadfu n-gon triangulation tests
+comment Quad fixture for polyphase n-gon triangulation tests
 element vertex 4
 property float x
 property float y

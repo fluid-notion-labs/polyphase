@@ -1,6 +1,6 @@
 # VTK Format Research
 
-Research notes for VTK support in loadfu. Issue: `loadfu-cnj`.
+Research notes for VTK support in polyphase. Issue: `loadfu-cnj`.
 
 ## VTK Format Landscape
 
@@ -39,9 +39,9 @@ Same data model, XML container with optional base64 encoding and compression.
 | `.pvtu`, `.pvtp`, etc. | Parallel | Multi-file references, split across processes |
 | `.pvd` | ParaView Data | Time series collection |
 
-## What's Relevant for loadfu
+## What's Relevant for polyphase
 
-loadfu loads surface meshes into `MeshData` (indexed triangle lists). The relevant VTK types are:
+polyphase loads surface meshes into `MeshData` (indexed triangle lists). The relevant VTK types are:
 
 ### Tier 1 — Direct surface mesh (implement first)
 
@@ -125,7 +125,7 @@ VTK carries per-point and per-cell attributes:
 - Unified `Vtk` data model covering both format families
 - `IOBuffer` type for type-erased numeric arrays
 - `PolyDataPiece`, `UnstructuredGridPiece` with topology and attributes
-- Writer support (not needed for loadfu)
+- Writer support (not needed for polyphase)
 
 ### Dependencies
 
@@ -137,9 +137,9 @@ VTK carries per-point and per-cell attributes:
 | `num-traits` + `num-derive` | Numeric trait derives | Light |
 | `byteorder` | Endian-aware reading | Light |
 | `base64` | XML binary data encoding | Light |
-| `bytemuck` | Safe transmute | Already in loadfu |
+| `bytemuck` | Safe transmute | Already in polyphase |
 | `quick-xml` | XML parsing | Medium (optional, `xml` feature) |
-| `serde` | Deserialization for XML | Already in loadfu behind `bevy` |
+| `serde` | Deserialization for XML | Already in polyphase behind `bevy` |
 | `flate2` | zlib compression | Medium (optional, `compression` feature) |
 | `lz4_flex` | LZ4 compression | Medium (optional, `compression` feature) |
 | `xz2` | LZMA compression | Heavy — C dependency (optional) |
@@ -150,9 +150,9 @@ VTK carries per-point and per-cell attributes:
 - `nom`, `num-traits`, `num-derive`, `byteorder`, `base64`, `bytemuck`, `log`, `trim-in-place`
 - This is a reasonable dep footprint for the complexity of VTK parsing.
 
-**Recommended features for loadfu:**
+**Recommended features for polyphase:**
 - `xml` — needed for .vtp/.vtu support. Adds `quick-xml` + `serde`.
-- Skip `compression` initially — most files loadfu encounters won't be compressed. Add later if needed.
+- Skip `compression` initially — most files polyphase encounters won't be compressed. Add later if needed.
 
 ### API sketch
 
@@ -301,15 +301,15 @@ AssetCapabilities {
 
 ```bash
 # Core without VTK
-cargo check -p loadfu
+cargo check -p polyphase
 # Core with VTK
-cargo check -p loadfu --features vtk
+cargo check -p polyphase --features vtk
 # Bevy without VTK
-cargo check -p loadfu --features bevy
+cargo check -p polyphase --features bevy
 # Full
-cargo check -p loadfu --features "bevy,vtk"
+cargo check -p polyphase --features "bevy,vtk"
 # Tests
-cargo nextest run -p loadfu --features vtk
+cargo nextest run -p polyphase --features vtk
 ```
 
 ## Test Data

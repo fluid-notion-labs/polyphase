@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
     ];
 
     let json = serde_json::json!({
-        "asset": {"version": "2.0", "generator": "loadfu gen_meshopt_fixture"},
+        "asset": {"version": "2.0", "generator": "polyphase gen_meshopt_fixture"},
         "extensionsUsed": ["EXT_meshopt_compression"],
         "scene": 0,
         "scenes": [{"nodes": [0]}],

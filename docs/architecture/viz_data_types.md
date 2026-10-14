@@ -1,12 +1,12 @@
 # Visualization Data Types — Research
 
 Research on the data types that scientific visualization demands, what formats
-carry them, and what loadfu needs to evolve into to be table-stakes for serious
+carry them, and what polyphase needs to evolve into to be table-stakes for serious
 viz work. Issue context: `loadfu-cnj` (VTK), broader than any single format.
 
 ## Why This Matters
 
-loadfu currently models one thing: **indexed triangle-list surface meshes**
+polyphase currently models one thing: **indexed triangle-list surface meshes**
 (`MeshData`). That's sufficient for loading 3D model files (STL, OBJ, GLB, PLY)
 but it covers maybe 20% of what a serious visualization tool needs. CFD,
 FEA, particle methods, climate science, molecular dynamics — they all produce
@@ -55,7 +55,7 @@ Linear features rendered as line primitives. Ubiquitous in scientific viz.
 **Format support:** VTK (LINES section in POLYDATA, PolyLine cells in
 UNSTRUCTURED_GRID), Ensight, Tecplot, CGNS (discrete line elements).
 
-**What loadfu needs:**
+**What polyphase needs:**
 - `TopologyKind::LineList` — already defined ✅
 - `TopologyKind::LineStrip` — **missing**, needed for polylines (VTK polylines
   are N-connected-vertices, not pairs). Could convert to LineList on ingest
@@ -86,7 +86,7 @@ Unconnected point data — no topology, just positions + attributes.
 only, no faces), HDF5 (arbitrary layout), LAS/LAZ (LiDAR-specific), XYZ
 (trivial text format).
 
-**What loadfu needs:**
+**What polyphase needs:**
 - `TopologyKind::PointList` — already defined ✅
 - Per-point scalars for color mapping (radius, temperature, velocity magnitude)
 - Per-point size/radius for rendering (SPH kernel radius, atom radius)
@@ -99,7 +99,7 @@ only, no faces), HDF5 (arbitrary layout), LAS/LAZ (LiDAR-specific), XYZ
 ### 4. Scalar Fields (Per-Vertex / Per-Cell Data)
 
 Named numeric arrays attached to mesh vertices or cells. This is the **biggest
-gap** in loadfu today and the single most important addition for scientific viz.
+gap** in polyphase today and the single most important addition for scientific viz.
 
 | Field type | Example quantities | Typical range |
 |------------|-------------------|---------------|
@@ -122,7 +122,7 @@ FIELD_DATA), HDF5/NetCDF (datasets), CGNS (FlowSolution), Exodus
 (nodal/element variables), OpenFOAM (volScalarField), Ensight (per-node/
 per-element variables).
 
-**What loadfu needs:**
+**What polyphase needs:**
 A `FieldData` or `AttributeData` concept — named arrays associated with
 vertices or cells. See [Proposed Data Model](#proposed-data-model) below.
 
@@ -147,7 +147,7 @@ vertices or cells. See [Proposed Data Model](#proposed-data-model) below.
 5. **Component extraction** — Visualize just vx, vy, or vz as a scalar.
 6. **Deformed shape** — Add displacement vectors to original positions.
 
-**What loadfu needs:**
+**What polyphase needs:**
 Same `FieldData` mechanism as scalars, but tagged as vector (3-component).
 The distinction matters for: glyph rendering, streamline integration, and
 correct interpolation. A vector field is not three independent scalars.
@@ -171,8 +171,8 @@ structural analysis.
 3. **Von Mises stress** — Derived scalar from stress tensor for color mapping.
 4. **Scalar invariants** — Trace, determinant, J2 invariant.
 
-**Priority for loadfu:** Low. Most users derive scalars from tensors in the
-simulation or post-processing pipeline. loadfu can carry the raw components
+**Priority for polyphase:** Low. Most users derive scalars from tensors in the
+simulation or post-processing pipeline. polyphase can carry the raw components
 as a generic N-component field and let the viz layer extract what it needs.
 
 ### 7. Volume / Grid Data
@@ -201,7 +201,7 @@ surfaces.
 6. **Boundary extraction** — Extract the outer surface of a volume mesh for
    surface rendering.
 
-**What loadfu needs:**
+**What polyphase needs:**
 This is the hardest category. Volume data is a fundamentally different
 representation from surface meshes. Options:
 
@@ -228,10 +228,10 @@ Sequences of any of the above data types over time steps.
 | **Adaptive topology** | Mesh connectivity changes between steps (remeshing) | OpenFOAM, AMR |
 | **Static mesh + varying fields** | Same mesh, different field values per step | Common optimization |
 
-**What loadfu needs:**
+**What polyphase needs:**
 Seaview already handles file-per-timestep sequences at the orchestration layer
-(sequence loader, frame window, etc.). loadfu's role is parsing individual
-frames. But loadfu should be **aware** of time metadata:
+(sequence loader, frame window, etc.). polyphase's role is parsing individual
+frames. But polyphase should be **aware** of time metadata:
 
 - A parser returning `AssetData` could include `time_value: Option<f64>` (the
   physical time of this snapshot).
@@ -239,7 +239,7 @@ frames. But loadfu should be **aware** of time metadata:
   step: `parse_at_time(bytes, t)` or `parse_step(bytes, step_index)`.
 - `PVD` files (VTK ParaView Data) are XML manifests pointing to per-timestep
   files — these need file I/O, which violates the pure-parser contract. Handle
-  at the orchestration layer, not in loadfu core.
+  at the orchestration layer, not in polyphase core.
 
 ### 9. Multi-Block / Composite Data
 
@@ -251,7 +251,7 @@ Large simulations decompose domains into blocks (for parallel computation).
 | **AMR hierarchy** | Nested refinement levels | HDF5 (AMReX, Enzo) |
 | **Domain decomposition** | Per-processor chunks | OpenFOAM (processor*/) |
 
-**What loadfu needs:**
+**What polyphase needs:**
 `AssetData` already holds `Vec<MeshData>` — each block becomes one entry.
 For very large datasets, need lazy/streaming access (don't parse all blocks
 if only rendering a subset). This connects to the mmap research (loadfu-55k).
@@ -260,14 +260,14 @@ if only rendering a subset). This connects to the mmap research (loadfu-55k).
 
 ## Field Data: The Critical Gap
 
-The single most impactful addition to loadfu's data model is **named per-vertex
-field arrays**. Without this, loadfu can show geometry but can't show _data on
+The single most impactful addition to polyphase's data model is **named per-vertex
+field arrays**. Without this, polyphase can show geometry but can't show _data on
 geometry_ — which is the entire point of scientific visualization.
 
 ### What it looks like in practice
 
 A CFD user loads a VTU file of flow around an airfoil. The file contains:
-- Surface mesh (triangles) — loadfu handles this today ✅
+- Surface mesh (triangles) — polyphase handles this today ✅
 - `pressure` — float scalar per vertex ❌
 - `velocity` — float[3] vector per vertex ❌
 - `temperature` — float scalar per vertex ❌
@@ -280,7 +280,7 @@ They want to:
 3. Switch between pressure/temperature/Mach coloring interactively
 4. Threshold by regionId to isolate specific parts
 
-All of this requires loadfu to carry the field data through to the consumer.
+All of this requires polyphase to carry the field data through to the consumer.
 
 ### What other tools do
 
@@ -396,7 +396,7 @@ storage later if needed.
 
 ## Format Coverage Matrix
 
-What data types each format can carry, and what loadfu should extract:
+What data types each format can carry, and what polyphase should extract:
 
 | Format | Surface mesh | Lines | Points | Scalar fields | Vector fields | Tensor fields | Time series | Volume grid |
 |--------|:-----------:|:-----:|:------:|:-------------:|:-------------:|:-------------:|:-----------:|:-----------:|
@@ -457,8 +457,8 @@ What data types each format can carry, and what loadfu should extract:
 - [ ] `GridData` type for structured grids (regular, rectilinear, curvilinear)
 - [ ] `VolumeData` type or extension of `AssetData`
 - [ ] VTI/VTR/VTS parser support
-- [ ] Isosurface extraction (marching cubes) as a loadfu utility
-- [ ] Slice plane extraction as a loadfu utility
+- [ ] Isosurface extraction (marching cubes) as a polyphase utility
+- [ ] Slice plane extraction as a polyphase utility
 
 ### Phase 4: Multi-Timestep Formats (future)
 **When single-file time series formats are needed.**
@@ -478,7 +478,7 @@ What data types each format can carry, and what loadfu should extract:
 
 ---
 
-## Format Priority for loadfu
+## Format Priority for polyphase
 
 Based on frequency of use in scientific visualization and seaview's target
 audience (CFD, fluid simulation):
@@ -513,9 +513,9 @@ audience (CFD, fluid simulation):
 
 ## Design Principles
 
-1. **Fields are data, not rendering.** loadfu carries field arrays as raw
+1. **Fields are data, not rendering.** polyphase carries field arrays as raw
    data. Color mapping, glyph generation, isosurface extraction — these are
-   consumer concerns (Bevy plugin, CLI tool, pipeline). loadfu doesn't pick
+   consumer concerns (Bevy plugin, CLI tool, pipeline). polyphase doesn't pick
    colormaps or generate arrows.
 
 2. **f32 is the rendering type.** Simulation codes output f64, but GPU
@@ -523,13 +523,13 @@ audience (CFD, fluid simulation):
    use Python/VTK, not a real-time renderer.
 
 3. **Names are strings, semantics are conventions.** A field named "velocity"
-   is just a 3-component f32 array. loadfu doesn't interpret it as a velocity —
+   is just a 3-component f32 array. polyphase doesn't interpret it as a velocity —
    the consumer decides what to do with it. Semantic hints (scalar vs vector vs
    tensor) come from component count and optional metadata, not type system
    enforcement.
 
 4. **Cell data is second class.** GPU rendering is per-vertex. Cell data needs
-   expansion (duplicate vertices per cell) to render with flat shading. loadfu
+   expansion (duplicate vertices per cell) to render with flat shading. polyphase
    can carry cell data but the Bevy integration layer would need to expand it.
    Start by supporting vertex data only; add cell data when a real use case
    demands it.
@@ -569,7 +569,7 @@ audience (CFD, fluid simulation):
    field.
 
 5. **Coordinate systems.** Some formats specify coordinate handedness or up-
-   axis (glTF is right-handed Y-up, VTK is right-handed Z-up). Should loadfu
+   axis (glTF is right-handed Y-up, VTK is right-handed Z-up). Should polyphase
    normalize to a consistent convention on ingest? Or carry the convention as
    metadata and let the consumer transform? Bevy is right-handed Y-up.
 

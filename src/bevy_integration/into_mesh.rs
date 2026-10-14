@@ -1,6 +1,6 @@
 //! Conversion from [`MeshData`] to [`bevy::mesh::Mesh`].
 //!
-//! This is the bridge between loadfu's format-agnostic core and Bevy's
+//! This is the bridge between polyphase's format-agnostic core and Bevy's
 //! rendering types. The conversion is intentionally simple — just mapping
 //! fields to mesh attributes.
 
@@ -10,7 +10,7 @@ use bevy::mesh::{Indices, Mesh, PrimitiveTopology};
 use crate::capabilities::TopologyKind;
 use crate::MeshData;
 
-/// Map loadfu's [`TopologyKind`] to Bevy's [`PrimitiveTopology`].
+/// Map polyphase's [`TopologyKind`] to Bevy's [`PrimitiveTopology`].
 fn to_bevy_topology(kind: TopologyKind) -> PrimitiveTopology {
     match kind {
         TopologyKind::TriangleList => PrimitiveTopology::TriangleList,
