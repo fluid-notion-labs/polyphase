@@ -27,7 +27,8 @@ GLB parser reads UV set 0 and drops `_images` on the floor.
 | **Materials** | ❌ type exists (`MaterialData`), nothing populates it | `capabilities.rs` |
 | **Textures** | ❌ no type, `_images` discarded | `parsers/glb.rs` |
 | **Node hierarchy / transforms** | ❌ | — |
-| Per-mesh material link | ❌ | — |
+| Per-mesh material link | ✅ `MeshData::material_index`, bound per primitive | `parsers/glb.rs` |
+| **Samplers** | ✅ resolved inline on each `TextureSlot` (`image`, `tex_coord`, `sampler: SamplerData`); GL enum consts exported | `capabilities.rs` |
 | VTK | 🔒 `vtk` feature, parser not yet written (`loadfu-cnj`) | `Cargo.toml`, `ref/vtk_samples/` |
 
 So: **UVs are done.** The work is textures → materials → hierarchy →
@@ -140,6 +141,12 @@ Implementation notes:
   matrix (`Transform::to_rows`/`to_cols` from gltf — mind the convention,
   add a test with a known translation). Multiple nodes may point at the same
   `mesh.index()` — that's instancing, keep the sharing.
+- **Samplers (implemented):** glTF binds samplers per texture object, so
+  each material slot is a `TextureSlot { image, tex_coord, sampler }` with
+  the sampler **resolved inline** as raw GL enums (`SamplerData`) — `None`
+  filters mean "auto" per the spec, and `SamplerData::default_sampler()` is
+  the implicit default. No separate samplers vec; the struct is tiny, so
+  per-slot duplication is free and consumers never chase indices.
 - **G2 — external references:** if a `.gltf` buffer/image has a URI that
   isn't a data-URI, return a new
   `GlbError::ExternalReferences { what: String }` with a message that says

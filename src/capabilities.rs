@@ -137,6 +137,89 @@ pub struct TextureData {
     pub name: Option<String>,
 }
 
+/// Texture sampling state, in raw OpenGL enum values (as stored in glTF).
+///
+/// glTF sampler fields are optional: `magFilter`/`minFilter` default to
+/// "auto" filtering (`None` here — GL LINEAR / LINEAR_MIPMAP_LINEAR), and
+/// `wrapS`/`wrapT` default to REPEAT. [`SamplerData::default_sampler`]
+/// returns exactly those defaults, matching the glTF 2.0 spec's implicit
+/// sampler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SamplerData {
+    /// Magnification filter (GL enum: 9728 NEAREST, 9729 LINEAR).
+    /// `None` = "auto" (LINEAR).
+    pub mag_filter: Option<u32>,
+    /// Minification filter (GL enum: 9728, 9729, 9984–9987 mipmap variants).
+    /// `None` = "auto" (LINEAR_MIPMAP_LINEAR).
+    pub min_filter: Option<u32>,
+    /// s wrapping mode (GL enum: 33071 CLAMP_TO_EDGE, 33648 MIRRORED_REPEAT,
+    /// 10497 REPEAT).
+    pub wrap_s: u32,
+    /// t wrapping mode (same values as `wrap_s`).
+    pub wrap_t: u32,
+}
+
+impl SamplerData {
+    /// The implicit default sampler per the glTF 2.0 spec: repeat wrapping,
+    /// auto filtering.
+    pub const fn default_sampler() -> Self {
+        Self {
+            mag_filter: None,
+            min_filter: None,
+            wrap_s: GL_WRAP_REPEAT,
+            wrap_t: GL_WRAP_REPEAT,
+        }
+    }
+}
+
+/// GL enum: `GL_NEAREST` (mag or min filter).
+pub const GL_NEAREST: u32 = 9728;
+/// GL enum: `GL_LINEAR` (mag or min filter).
+pub const GL_LINEAR: u32 = 9729;
+/// GL enum: `GL_NEAREST_MIPMAP_NEAREST` (min filter).
+pub const GL_NEAREST_MIPMAP_NEAREST: u32 = 9984;
+/// GL enum: `GL_LINEAR_MIPMAP_NEAREST` (min filter).
+pub const GL_LINEAR_MIPMAP_NEAREST: u32 = 9985;
+/// GL enum: `GL_NEAREST_MIPMAP_LINEAR` (min filter).
+pub const GL_NEAREST_MIPMAP_LINEAR: u32 = 9986;
+/// GL enum: `GL_LINEAR_MIPMAP_LINEAR` (min filter).
+pub const GL_LINEAR_MIPMAP_LINEAR: u32 = 9987;
+/// GL enum: `GL_CLAMP_TO_EDGE` (wrap mode).
+pub const GL_CLAMP_TO_EDGE: u32 = 33071;
+/// GL enum: `GL_MIRRORED_REPEAT` (wrap mode).
+pub const GL_MIRRORED_REPEAT: u32 = 33648;
+/// GL enum: `GL_REPEAT` (wrap mode).
+pub const GL_WRAP_REPEAT: u32 = 10497;
+
+/// One material texture slot: which image, which UV set, and how to sample.
+///
+/// glTF binds samplers per *texture object*, and a texture object pairs an
+/// image with a sampler — the same image can appear under several texture
+/// objects with different samplers. Slots therefore carry the resolved
+/// [`SamplerData`] inline rather than an index into a separate list (the
+/// struct is tiny; duplicating it per slot costs nothing and spares
+/// consumers a default-sampler lookup).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextureSlot {
+    /// Image index into [`AssetData::textures`].
+    pub image: usize,
+    /// Which UV set the slot reads (`TEXCOORD_n`).
+    pub tex_coord: u32,
+    /// Sampling state — already resolved, so a texture object with no
+    /// explicit sampler just yields [`SamplerData::default_sampler`].
+    pub sampler: SamplerData,
+}
+
+impl Default for TextureSlot {
+    fn default() -> Self {
+        Self {
+            image: 0,
+            tex_coord: 0,
+            sampler: SamplerData::default_sampler(),
+        }
+    }
+}
+
 impl TextureMime {
     /// Parse a MIME type string (e.g. from glTF `mimeType` fields).
     pub fn parse(s: &str) -> Option<Self> {
@@ -168,8 +251,8 @@ impl TextureMime {
 /// Intentionally simple for v0.1 — captures PBR base properties that GLB
 /// and OBJ/MTL can provide. Extensible for future formats.
 ///
-/// Texture references are indices into [`AssetData::textures`], so one
-/// texture can be shared by several materials.
+/// Texture references are [`TextureSlot`]s — an image index plus UV set and
+/// sampler — so one texture can be shared by several materials.
 #[derive(Debug, Clone)]
 pub struct MaterialData {
     /// Material name (from the file, if any).
@@ -190,14 +273,14 @@ pub struct MaterialData {
     pub double_sided: bool,
     /// Whether this material references texture data.
     pub has_textures: bool,
-    /// Base color texture — index into [`AssetData::textures`].
-    pub base_color_texture: Option<usize>,
-    /// Normal map texture — index into [`AssetData::textures`].
-    pub normal_texture: Option<usize>,
-    /// Metallic-roughness texture — index into [`AssetData::textures`].
-    pub metallic_roughness_texture: Option<usize>,
-    /// Emissive texture — index into [`AssetData::textures`].
-    pub emissive_texture: Option<usize>,
+    /// Base color texture slot (image index, UV set, sampler).
+    pub base_color_texture: Option<TextureSlot>,
+    /// Normal map texture slot.
+    pub normal_texture: Option<TextureSlot>,
+    /// Metallic-roughness texture slot.
+    pub metallic_roughness_texture: Option<TextureSlot>,
+    /// Emissive texture slot.
+    pub emissive_texture: Option<TextureSlot>,
 }
 
 impl Default for MaterialData {
@@ -503,7 +586,10 @@ mod tests {
 
     #[test]
     fn texture_mime_from_uri() {
-        assert_eq!(TextureMime::from_uri("textures/brick.png"), Some(TextureMime::Png));
+        assert_eq!(
+            TextureMime::from_uri("textures/brick.png"),
+            Some(TextureMime::Png)
+        );
         assert_eq!(TextureMime::from_uri("photo.JPG"), Some(TextureMime::Jpeg));
         assert_eq!(TextureMime::from_uri("noext"), None);
     }

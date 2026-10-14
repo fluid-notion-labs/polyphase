@@ -379,8 +379,8 @@ fn parse_asset_dispatches_all_formats() {
     ];
 
     for (name, format) in cases {
-        let asset = loadfu::parse_asset(&fixture(name), format)
-            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let asset =
+            loadfu::parse_asset(&fixture(name), format).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(!asset.meshes.is_empty(), "{name}: no meshes");
         for mesh in &asset.meshes {
             mesh.validate().unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -399,8 +399,8 @@ fn load_with_extension_hint() {
 #[test]
 fn load_sniffs_when_no_hint() {
     for name in ["triangle.stl", "triangle.obj", "triangle.ply", "cube.glb"] {
-        let asset = loadfu::load(&fixture(name), None)
-            .unwrap_or_else(|e| panic!("sniff {name}: {e}"));
+        let asset =
+            loadfu::load(&fixture(name), None).unwrap_or_else(|e| panic!("sniff {name}: {e}"));
         assert!(!asset.meshes.is_empty(), "sniff {name}: no meshes");
     }
 }
@@ -408,7 +408,10 @@ fn load_sniffs_when_no_hint() {
 #[test]
 fn load_unrecognized_bytes_error() {
     let err = loadfu::load(b"{}", Some(Path::new("thing.gltf"))).unwrap_err();
-    assert!(matches!(err, loadfu::LoadError::Glb(_)), "glTF text with no data: {err}");
+    assert!(
+        matches!(err, loadfu::LoadError::Glb(_)),
+        "glTF text with no data: {err}"
+    );
 
     let err = loadfu::load(b"not a mesh at all", None).unwrap_err();
     assert!(
@@ -444,8 +447,8 @@ fn obj_parse_asset_full_pipeline() {
         mtl: Some(fixture("two_objects.mtl")),
         ..Default::default()
     };
-    let asset = loadfu::parsers::obj::parse_asset(&fixture("two_objects_textured.obj"), &options)
-        .unwrap();
+    let asset =
+        loadfu::parsers::obj::parse_asset(&fixture("two_objects_textured.obj"), &options).unwrap();
 
     for mesh in &asset.meshes {
         mesh.validate().unwrap();

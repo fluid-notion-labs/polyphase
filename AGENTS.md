@@ -218,7 +218,7 @@ When adding a new parser or feature, add a minimal fixture that exercises it.
 ### Test Counts
 
 Track rough test counts here so agents know what to expect:
-- **152 tests** as of Epic 5 completion (112 unit + 13 bevy-layer + 27 integration in `tests/pipeline.rs`)
+- **193 tests** as of multi-asset steps 1–4 + sampler capture (159 unit incl. bevy-layer + 32 integration in `tests/pipeline.rs` + 4 doc-tests; `--features bevy` adds a few more)
 
 ## Verification
 

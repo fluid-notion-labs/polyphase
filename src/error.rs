@@ -165,9 +165,7 @@ impl LoadError {
             Self::Obj(_) => Some("OBJ"),
             Self::Glb(_) => Some("GLB"),
             Self::Ply(_) => Some("PLY"),
-            Self::Validation(_)
-            | Self::UnsupportedFormat { .. }
-            | Self::Io(_) => None,
+            Self::Validation(_) | Self::UnsupportedFormat { .. } | Self::Io(_) => None,
         }
     }
 }

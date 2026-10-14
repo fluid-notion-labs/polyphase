@@ -60,9 +60,10 @@ pub fn parse_asset(bytes: &[u8], format: MeshFormat) -> Result<AssetData, LoadEr
             let mesh = parsers::stl::parse(bytes)?;
             Ok(AssetData::single(mesh))
         }
-        MeshFormat::Obj => {
-            Ok(parsers::obj::parse_asset(bytes, &parsers::obj::ObjOptions::default())?)
-        }
+        MeshFormat::Obj => Ok(parsers::obj::parse_asset(
+            bytes,
+            &parsers::obj::ObjOptions::default(),
+        )?),
         MeshFormat::Gltf | MeshFormat::Glb => Ok(parsers::glb::parse_asset(bytes)?),
         MeshFormat::Ply => {
             let mesh = parsers::ply::parse(bytes)?;
@@ -93,8 +94,10 @@ pub fn load(bytes: &[u8], hint: Option<&std::path::Path>) -> Result<AssetData, L
 // ── Public API re-exports ─────────────────────────────────────────────
 
 pub use capabilities::{
-    AlphaMode, AssetCapabilities, AssetData, MaterialData, NodeData, ParseCost, TextureData,
-    TextureMime, TextureSource, TopologyKind,
+    AlphaMode, AssetCapabilities, AssetData, MaterialData, NodeData, ParseCost, SamplerData,
+    TextureData, TextureMime, TextureSlot, TextureSource, TopologyKind, GL_CLAMP_TO_EDGE,
+    GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR_MIPMAP_NEAREST, GL_MIRRORED_REPEAT, GL_NEAREST,
+    GL_NEAREST_MIPMAP_LINEAR, GL_NEAREST_MIPMAP_NEAREST, GL_WRAP_REPEAT,
 };
 pub use error::{GlbError, LoadError, ObjError, PlyError, StlError};
 pub use format::MeshFormat;

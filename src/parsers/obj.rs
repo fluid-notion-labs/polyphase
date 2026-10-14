@@ -17,7 +17,7 @@
 //! types replaced by [`MeshData`].
 
 use crate::capabilities::{
-    AlphaMode, AssetData, MaterialData, TextureData, TextureSource,
+    AlphaMode, AssetData, MaterialData, TextureData, TextureSlot, TextureSource,
 };
 use crate::error::ObjError;
 use crate::mesh_data::MeshData;
@@ -98,8 +98,9 @@ pub fn parse_with_options(bytes: &[u8], options: &ObjOptions) -> Result<MeshData
 /// - `d` (dissolve, tobj normalizes `Tr` to it) → `base_color` alpha.
 ///   Absent → opaque (1.0).
 /// - `map_Kd` → [`TextureSource::Uri`] texture; the material's
-///   `base_color_texture` is the index into [`AssetData::textures`]. Core
-///   never resolves the URI.
+///   `base_color_texture` is a [`TextureSlot`] pointing at it with the
+///   default sampler (MTL has no sampler concept). Core never resolves the
+///   URI.
 ///
 /// [`MeshData::material_index`] is bound per object via `usemtl`.
 pub fn parse_asset(bytes: &[u8], options: &ObjOptions) -> Result<AssetData, ObjError> {
@@ -141,12 +142,15 @@ pub fn parse_asset(bytes: &[u8], options: &ObjOptions) -> Result<AssetData, ObjE
         let base_color_texture = material.diffuse_texture.as_ref().map(|path| {
             // De-duplication is not attempted — one texture entry per
             // material reference keeps indices trivial to compute.
-            let index = textures.len();
+            let image = textures.len();
             textures.push(TextureData {
                 source: TextureSource::Uri(path.clone()),
                 name: Some(material.name.clone()),
             });
-            index
+            TextureSlot {
+                image,
+                ..Default::default()
+            }
         });
 
         material_data.push(MaterialData {
@@ -470,7 +474,10 @@ mod tests {
             TextureSource::Uri("textures/brick.png".to_string())
         );
         assert_eq!(asset.materials[0].base_color_texture, None);
-        assert_eq!(asset.materials[1].base_color_texture, Some(0));
+        assert_eq!(
+            asset.materials[1].base_color_texture,
+            Some(TextureSlot::default())
+        );
         assert!(asset.materials[1].has_textures);
         assert!(!asset.materials[0].has_textures);
     }

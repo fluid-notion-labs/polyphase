@@ -114,8 +114,7 @@ impl MeshFormat {
 
         // OBJ: scan the leading text lines for Wavefront keywords. glTF text
         // starts with '{' and never matches, so it falls through to None.
-        const OBJ_KEYWORDS: [&str; 7] =
-            ["v ", "vn ", "vt ", "f ", "o ", "mtllib ", "usemtl "];
+        const OBJ_KEYWORDS: [&str; 7] = ["v ", "vn ", "vt ", "f ", "o ", "mtllib ", "usemtl "];
         for line in bytes.split(|&b| b == b'\n').take(32) {
             if let Ok(line) = std::str::from_utf8(line) {
                 if OBJ_KEYWORDS.iter().any(|kw| line.starts_with(kw)) {
@@ -209,7 +208,7 @@ impl MeshFormat {
                 multi_object: true,  // OBJ can have multiple objects/groups
                 has_materials: true, // OBJ can reference MTL files
                 has_nodes: false,
-                has_textures: true,  // MTL can reference texture images
+                has_textures: true,            // MTL can reference texture images
                 parse_cost: ParseCost::Medium, // text parsing + indexing
                 estimated_memory: None,
                 supports_mmap: false,
@@ -245,11 +244,11 @@ impl MeshFormat {
             },
             Self::Ply => AssetCapabilities {
                 topology: TopologyKind::TriangleList,
-                has_normals: true,          // PLY often has normals
-                has_uvs: true,              // PLY can have UVs
-                has_vertex_colors: true,    // PLY commonly has vertex colors (scanners)
-                multi_object: false,        // PLY is single mesh
-                has_materials: false,       // no material system
+                has_normals: true,       // PLY often has normals
+                has_uvs: true,           // PLY can have UVs
+                has_vertex_colors: true, // PLY commonly has vertex colors (scanners)
+                multi_object: false,     // PLY is single mesh
+                has_materials: false,    // no material system
                 has_nodes: false,
                 has_textures: false,        // no texture references
                 parse_cost: ParseCost::Low, // binary is fast; ASCII is medium
@@ -350,30 +349,66 @@ mod tests {
     fn sniff_glb_magic() {
         assert_eq!(MeshFormat::sniff(b"glTF\x02\x00"), Some(MeshFormat::Glb));
         // The real fixture
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("cube.glb")), Some(MeshFormat::Glb));
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("cube.glb")),
+            Some(MeshFormat::Glb)
+        );
     }
 
     #[test]
     fn sniff_ply_header() {
-        assert_eq!(MeshFormat::sniff(b"ply\nformat ascii 1.0"), Some(MeshFormat::Ply));
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle.ply")), Some(MeshFormat::Ply));
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle_binary.ply")), Some(MeshFormat::Ply));
+        assert_eq!(
+            MeshFormat::sniff(b"ply\nformat ascii 1.0"),
+            Some(MeshFormat::Ply)
+        );
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("triangle.ply")),
+            Some(MeshFormat::Ply)
+        );
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("triangle_binary.ply")),
+            Some(MeshFormat::Ply)
+        );
     }
 
     #[test]
     fn sniff_stl_binary_and_ascii() {
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle.stl")), Some(MeshFormat::Stl));
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle_ascii.stl")), Some(MeshFormat::Stl));
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("quad.stl")), Some(MeshFormat::Stl));
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("triangle.stl")),
+            Some(MeshFormat::Stl)
+        );
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("triangle_ascii.stl")),
+            Some(MeshFormat::Stl)
+        );
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("quad.stl")),
+            Some(MeshFormat::Stl)
+        );
     }
 
     #[test]
     fn sniff_obj_keywords() {
-        assert_eq!(MeshFormat::sniff(b"v 0 0 0\nv 1 0 0\n"), Some(MeshFormat::Obj));
-        assert_eq!(MeshFormat::sniff(b"# comment\nf 1 2 3\n"), Some(MeshFormat::Obj));
-        assert_eq!(MeshFormat::sniff(b"mtllib thing.mtl\no thing\n"), Some(MeshFormat::Obj));
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("triangle.obj")), Some(MeshFormat::Obj));
-        assert_eq!(MeshFormat::sniff(&crate::test_util::fixture("two_objects.obj")), Some(MeshFormat::Obj));
+        assert_eq!(
+            MeshFormat::sniff(b"v 0 0 0\nv 1 0 0\n"),
+            Some(MeshFormat::Obj)
+        );
+        assert_eq!(
+            MeshFormat::sniff(b"# comment\nf 1 2 3\n"),
+            Some(MeshFormat::Obj)
+        );
+        assert_eq!(
+            MeshFormat::sniff(b"mtllib thing.mtl\no thing\n"),
+            Some(MeshFormat::Obj)
+        );
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("triangle.obj")),
+            Some(MeshFormat::Obj)
+        );
+        assert_eq!(
+            MeshFormat::sniff(&crate::test_util::fixture("two_objects.obj")),
+            Some(MeshFormat::Obj)
+        );
     }
 
     #[test]

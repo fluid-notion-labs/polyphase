@@ -16,8 +16,8 @@
 //! for stats only. This parser reads the actual buffer data into `MeshData`.
 
 use crate::capabilities::{
-    AlphaMode, AssetData, MaterialData, NodeData, TextureData, TextureMime, TextureSource,
-    TopologyKind,
+    AlphaMode, AssetData, MaterialData, NodeData, SamplerData, TextureData, TextureMime,
+    TextureSlot, TextureSource, TopologyKind,
 };
 use crate::error::GlbError;
 use crate::mesh_data::MeshData;
@@ -110,7 +110,9 @@ pub fn parse_asset(bytes: &[u8]) -> Result<AssetData, GlbError> {
 
     let mut nodes = Vec::new();
     let mut root_nodes = Vec::new();
-    let scene = document.default_scene().or_else(|| document.scenes().next());
+    let scene = document
+        .default_scene()
+        .or_else(|| document.scenes().next());
     if let Some(scene) = scene {
         for node in scene.nodes() {
             let index = flatten_node(node, &mut nodes);
@@ -184,11 +186,11 @@ fn extract_textures(
                 }
             }
             gltf::image::Source::Uri { uri, mime_type } => {
-                let payload = uri
-                    .strip_prefix("data:")
-                    .ok_or_else(|| GlbError::ExternalReferences {
-                        what: format!("image '{uri}'"),
-                    })?;
+                let payload =
+                    uri.strip_prefix("data:")
+                        .ok_or_else(|| GlbError::ExternalReferences {
+                            what: format!("image '{uri}'"),
+                        })?;
                 // data:[<mediatype>][;base64],<payload>
                 let (meta, encoded) = payload
                     .split_once(',')
@@ -222,16 +224,15 @@ fn extract_materials(document: &gltf::Document) -> Vec<MaterialData> {
         .materials()
         .map(|material| {
             let pbr = material.pbr_metallic_roughness();
-            // Texture references become image indices, matching the order of
-            // `extract_textures` (one entry per image, in image index order).
-            let tex = |info: Option<gltf::texture::Info>| {
-                info.map(|info| info.texture().source().index())
-            };
+            // Texture slots carry the image index (matching the order of
+            // `extract_textures`, one entry per image), the UV set, and the
+            // resolved sampler from the referenced texture object.
+            let tex = |info: Option<gltf::texture::Info>| info.map(texture_slot);
 
             let base_color_texture = tex(pbr.base_color_texture());
             let normal_texture = material
                 .normal_texture()
-                .map(|t| t.texture().source().index());
+                .map(|t| texture_slot_of(t.texture(), t.tex_coord()));
             let metallic_roughness_texture = tex(pbr.metallic_roughness_texture());
             let emissive_texture = tex(material.emissive_texture());
             let has_textures = base_color_texture.is_some()
@@ -260,6 +261,31 @@ fn extract_materials(document: &gltf::Document) -> Vec<MaterialData> {
             }
         })
         .collect()
+}
+
+/// Build a [`TextureSlot`] from a glTF texture-info struct (PBR base color,
+/// metallic-roughness, emissive).
+fn texture_slot(info: gltf::texture::Info<'_>) -> TextureSlot {
+    texture_slot_of(info.texture(), info.tex_coord())
+}
+
+/// Build a [`TextureSlot`] from a glTF texture reference and UV set.
+///
+/// The sampler is resolved here: a texture object with no explicit sampler
+/// per the glTF spec means the implicit default (repeat wrapping, auto
+/// filtering), which [`SamplerData::default_sampler`] represents.
+fn texture_slot_of(texture: gltf::texture::Texture<'_>, tex_coord: u32) -> TextureSlot {
+    let sampler = texture.sampler();
+    TextureSlot {
+        image: texture.source().index(),
+        tex_coord,
+        sampler: SamplerData {
+            mag_filter: sampler.mag_filter().map(|f| f.as_gl_enum()),
+            min_filter: sampler.min_filter().map(|f| f.as_gl_enum()),
+            wrap_s: sampler.wrap_s().as_gl_enum(),
+            wrap_t: sampler.wrap_t().as_gl_enum(),
+        },
+    }
 }
 
 /// Recursively flatten a node and its descendants into `nodes`, returning
@@ -377,8 +403,10 @@ fn extract_primitive(
 
     let normals = match normals {
         Some(n) if n.len() == positions.len() => Some(n),
-        _ if matches!(topology, TopologyKind::TriangleList | TopologyKind::TriangleStrip)
-            && !positions.is_empty()
+        _ if matches!(
+            topology,
+            TopologyKind::TriangleList | TopologyKind::TriangleStrip
+        ) && !positions.is_empty()
             && indices.len() >= 3 =>
         {
             Some(compute_smooth_normals(&positions, &indices))
@@ -805,10 +833,51 @@ mod tests {
         }
 
         // Material 0 references the texture via image index 0.
-        assert_eq!(asset.materials[0].base_color_texture, Some(0));
+        assert_eq!(
+            asset.materials[0].base_color_texture.map(|slot| slot.image),
+            Some(0)
+        );
         assert!(asset.materials[0].has_textures);
         assert!(!asset.materials[1].has_textures);
         assert!(asset.capabilities().has_textures);
+    }
+
+    #[test]
+    fn sampler_settings_captured() {
+        // cube_textured.glb declares one sampler:
+        // magFilter LINEAR, minFilter LINEAR_MIPMAP_LINEAR, wrap REPEAT×2.
+        let asset = parse_asset(&fixture("cube_textured.glb")).unwrap();
+        let slot = asset.materials[0]
+            .base_color_texture
+            .expect("material 0 has a base color texture");
+
+        assert_eq!(slot.image, 0);
+        assert_eq!(slot.tex_coord, 0);
+        assert_eq!(
+            slot.sampler,
+            SamplerData {
+                mag_filter: Some(crate::GL_LINEAR),
+                min_filter: Some(crate::GL_LINEAR_MIPMAP_LINEAR),
+                wrap_s: crate::GL_WRAP_REPEAT,
+                wrap_t: crate::GL_WRAP_REPEAT,
+            }
+        );
+    }
+
+    #[test]
+    fn default_sampler_when_texture_has_none() {
+        // cube_default_sampler.glb has a texture object with no `sampler`
+        // key — per the glTF spec that's the implicit default sampler:
+        // repeat wrapping, auto filtering (filters undefined).
+        let asset = parse_asset(&fixture("cube_default_sampler.glb")).unwrap();
+        let slot = asset.materials[0]
+            .base_color_texture
+            .expect("material 0 has a base color texture");
+
+        assert_eq!(slot.sampler, SamplerData::default_sampler());
+        assert_eq!(slot.sampler.wrap_s, crate::GL_WRAP_REPEAT);
+        assert_eq!(slot.sampler.mag_filter, None);
+        assert_eq!(slot.sampler.min_filter, None);
     }
 
     #[test]
