@@ -78,6 +78,11 @@ Rules and rationale for loadfu's dependency choices. Read this before adding a c
 
 ## VTK Parsing — `vtkio` vs Hand-rolling
 
+> **Status:** disabled. The `vtkio` dependency and `vtk` feature were removed
+> from `Cargo.toml` so checkouts don't need a vendored `../vtkio` to build.
+> The evaluation below stands — re-add `vtkio` as an optional dep with a
+> `vtk` feature when the VTK parser (`loadfu-cnj`) starts.
+
 **Decision: use `vtkio`, vendored, gated behind `vtk` feature flag.**
 
 ### Crates evaluated

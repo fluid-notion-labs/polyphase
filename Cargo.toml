@@ -20,9 +20,6 @@ thiserror = "2"
 # FFI to meshoptimizer; see docs/architecture/dependencies.md
 meshopt = { version = "0.6", optional = true }
 
-# VTK format support (optional, behind vtk feature flag)
-vtkio = { path = "../vtkio", default-features = false, features = ["xml"], optional = true }
-
 # Serialization (needed for Bevy AssetLoader settings, gated behind bevy feature)
 serde = { version = "1", features = ["derive"], optional = true }
 
@@ -41,5 +38,7 @@ serde_json = "1"
 [features]
 default = []
 bevy = ["dep:bevy", "dep:serde"]
-vtk = ["dep:vtkio"]
 meshopt = ["dep:meshopt"]
+# VTK support was disabled (removed pending loadfu-cnj); re-add
+# `vtkio` as an optional dependency with a `vtk` feature when the
+# VTK parser work starts.
