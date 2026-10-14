@@ -2,6 +2,7 @@
 
 **Status:** Epic 1 (GLB writer, plain) **landed**; Epics 2–4 not started.
 **Companion:** `docs/polyphase.md` (reader design), `docs/multi-asset.md` (multi-asset plan, mostly implemented)
+**See also:** `docs/consumer_traits.md` — consumer trait design + write-capability negotiation ("I have this, what formats, what do I lose"). The `Output` composite question there (§4.5) should be settled before the OBJ writer (Epic 2).
 
 > Progress note: Epic 1 is done and the manifold migration (sequencing step 4)
 > is done for the writers that exist — manifold's `write_glb*` family delegates
