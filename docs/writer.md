@@ -1,7 +1,16 @@
 # Writer Support — Design Plan
 
-**Status:** Planned (not started)
+**Status:** Epic 1 (GLB writer, plain) **landed**; Epics 2–4 not started.
 **Companion:** `docs/polyphase.md` (reader design), `docs/multi-asset.md` (multi-asset plan, mostly implemented)
+
+> Progress note: Epic 1 is done and the manifold migration (sequencing step 4)
+> is done for the writers that exist — manifold's `write_glb*` family delegates
+> to `writers::glb` as thin `Mesh → AssetData` wrappers. The rename already
+> happened (loadfu → polyphase), so sequencing step 5 is moot. Remaining:
+> OBJ/MTL/PLY/STL writers (step 2), meshopt compression (step 3), and retiring
+> `GlbTextureMaterial` once a manifold consumer carries `AssetData` through its
+> pipeline (its only consumer, `sv_stage_decimate_meshopt`, is not currently
+> in `Cargo.toml`'s bin list).
 
 ## Goal
 
